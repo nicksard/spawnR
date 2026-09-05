@@ -41,8 +41,10 @@ the parent, which makes the LOD identically zero. See [ibd_mixture()]. To
 weigh several relationship classes at once use the `relatedness` argument of
 [parentage_lod()] rather than averaging coefficients here: relatedness holds
 for a whole genome, so the classes must be mixed over multilocus
-likelihoods, not inside a per-locus denominator. Not supported for
-`type = "pair"`.}
+likelihoods, not inside a per-locus denominator. For `type = "pair"`,
+supply either one vector, applied to both alleged parents, or a two-row
+matrix or list of two giving the alleged mother and the alleged father
+separately.}
 }
 \value{
 A numeric vector of per-locus LOD contributions. `NA` where a

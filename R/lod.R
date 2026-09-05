@@ -42,14 +42,18 @@
 #'   *non-parent* candidate is related to the offspring, changing what the LOD
 #'   score is a ratio against. The default `NULL` means unrelated, `c(1, 0, 0)`,
 #'   which is the classical assumption. Use [ibd_mixture()] to build this from
-#'   relationship classes. Not yet supported for `type = "pair"`.
+#'   relationship classes. For `type = "pair"`, either one vector applied to
+#'   both alleged parents, or a two-row matrix or list of two giving the alleged
+#'   mother and father separately.
 #' @param relatedness Named weights describing the relationship classes present
 #'   among *non-parent* candidates, for example
 #'   `c(unrelated = 0.95, avuncular = 0.05)`; see [ibd_mixture()] for the class
 #'   names. The LOD then becomes a ratio against the best-fitting alternative
 #'   rather than against an unrelated stranger, which is what keeps a close
 #'   relative of an unsampled parent from being mistaken for the parent. Mutually
-#'   exclusive with `ibd`. Not yet supported for `type = "pair"`.
+#'   exclusive with `ibd`. For `type = "pair"` each alleged parent is taken to
+#'   draw its class independently, so the mixture runs over every pair of
+#'   classes.
 #' @param output `"long"` returns one row per comparison. `"matrix"` returns
 #'   the offspring-by-candidate matrices directly, which is much cheaper for
 #'   large candidate sets: a thousand offspring against several thousand
@@ -100,20 +104,11 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
   output <- match.arg(output)
   if (!is.null(relatedness)) {
     if (!is.null(ibd)) stop("Give either `ibd` or `relatedness`, not both.", call. = FALSE)
-    if (type == "pair") stop("`relatedness` is not yet supported for type = 'pair'.", call. = FALSE)
     rw <- relatedness / sum(relatedness)
     if (any(rw < 0) || is.null(names(rw))) {
       stop("`relatedness` must be a named vector of non-negative class weights; ",
            "see ?ibd_mixture for the class names.", call. = FALSE)
     }
-  }
-  if (!is.null(ibd)) {
-    ibd <- as.numeric(ibd)
-    if (length(ibd) != 3L || any(ibd < 0) || abs(sum(ibd) - 1) > 1e-8) {
-      stop("`ibd` must be three non-negative coefficients summing to one; ",
-           "see ?ibd_mixture.", call. = FALSE)
-    }
-    if (type == "pair") stop("`ibd` is not yet supported for type = 'pair'.", call. = FALSE)
   }
   .check_freqs(freqs, g)
   nl <- n_loci(g)
@@ -165,8 +160,26 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
     LOD <- MIS <- NCM <- matrix(0, no, nc)
     for (m in unique(cand2)) {
       j <- which(cand2 == m)
-      M <- .lod_matrix(gi, oi, ci[j], rep(match(m, g$ids), no), freqs, e, "pair")
-      LOD[, j] <- M$lod; MIS[, j] <- M$mism; NCM[, j] <- M$ncmp
+      ki <- rep(match(m, g$ids), no)
+      if (is.null(relatedness)) {
+        M <- .lod_matrix(gi, oi, ci[j], ki, freqs, e, "pair", ibd = ibd)
+        LOD[, j] <- M$lod; MIS[, j] <- M$mism; NCM[, j] <- M$ncmp
+      } else {
+        # Each alleged parent draws its relationship class independently, so the
+        # multilocus mixture runs over every pair of classes.
+        acc <- NULL
+        for (cm in names(rw)) for (cf in names(rw)) {
+          Mc <- .lod_matrix(gi, oi, ci[j], ki, freqs, e, "pair",
+                            ibd = list(ibd_mixture(structure(1, names = cm)),
+                                       ibd_mixture(structure(1, names = cf))))
+          term <- log(rw[[cm]] * rw[[cf]]) - Mc$lod
+          acc <- if (is.null(acc)) term else {
+            mx <- pmax(acc, term); mx + log(exp(acc - mx) + exp(term - mx))
+          }
+          MIS[, j] <- Mc$mism; NCM[, j] <- Mc$ncmp
+        }
+        LOD[, j] <- -acc
+      }
     }
   } else {
     ki <- if (type == "one_known") match(kn, g$ids) else NULL

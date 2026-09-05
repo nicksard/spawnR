@@ -125,6 +125,58 @@ offspring's uncle, so the class is `avuncular`, not `full_sib`. See
 ibd_mixture(unrelated = 0.95, avuncular = 0.05)
 ```
 
+## The parent-pair configuration is worse, not better
+
+Testing a candidate *pair* jointly looks like it should be safer, since two
+genotypes must agree instead of one. It is the opposite. A full sib of the true
+sire crossed with a full sib of the true dam mimics the real pair far better
+than either sib does alone, because the errors compound on both sides.
+
+Pools were built so that both the true sire and the true dam had full sibs
+present, and both true parents were withheld together from a fraction of
+offspring.
+
+```{r, echo = FALSE}
+d3 <- read.csv(text = "
+prop_pair_sampled,model,stated,observed
+1.0,naive (unrelated),1.000,1.000
+1.0,relatedness-aware,0.998,1.000
+0.5,naive (unrelated),0.997,0.653
+0.5,relatedness-aware,0.995,0.946")
+knitr::kable(d3, col.names = c("prop pair sampled", "model", "stated posterior",
+                               "observed correct"))
+```
+
+A stated 0.997 against an observed 0.653 is a thirty-four point gap, roughly
+twice the worst single-parent case. The correction recovers twenty-nine of those
+points, at the cost of dropping the assignment rate from 75% to 50%.
+
+Under H2 neither alleged parent is a parent, but each may stand in for a
+relative of the one it is being tested as. The offspring has only two alleles to
+share, so the two sides cannot be handled separately: writing `a` and `b` for
+the probability that the maternal and paternal alleles are identical by descent
+with the alleged mother and father,
+
+$$\Pr(o \mid am, af) = ab\,T(o \mid am, af) + a(1-b)\,T(o \mid am)
+  + (1-a)b\,T(o \mid af) + (1-a)(1-b)\,P(o).$$
+
+Setting `a = b = 0` recovers the classical `P(o)`, and `a = b = 1` recovers the
+numerator, so the LOD correctly goes to zero. Setting the alleged mother to
+`parent` and the father to `unrelated` collapses the whole expression onto the
+known-mother formula, which the test suite checks as a cross-configuration
+consistency condition.
+
+```{r}
+parentage_lod(sim$genotypes, ped$offspring[1:3], sim$sires, p, error = 0.01,
+              type = "pair", mothers = sim$dams,
+              relatedness = c(unrelated = 0.9, avuncular = 0.1))[1:3, ]
+```
+
+Each alleged parent is taken to draw its relationship class independently, so
+the mixture runs over every pair of classes. `ibd` also accepts a two-row matrix
+if the two sexes were collected differently and their pools are not equally
+related.
+
 ## What it costs, and what it does not fix
 
 Recall falls. In the hardest cell, 15 microsatellites with ten full sibs and
@@ -139,9 +191,12 @@ two. So treat the correction as substantially reducing the bias, not abolishing
 it, and treat very high relatedness with weak markers as a study-design problem
 rather than an analysis problem.
 
-Two further limits. The correction is not implemented for
-`type = "pair"`. And it needs you to state the pool composition; there is a
-screen to tell you whether it matters,
+The residual applies to the pair configuration too: 0.995 stated against 0.946
+observed in the hard cell, better than 0.653 but not yet honest to the last
+point.
+
+One further limit: the correction needs you to state the pool composition. There
+is a screen to tell you whether it matters,
 
 ```{r}
 pool_relatedness(sim$genotypes, ped$offspring[1:4], sim$sires, p,

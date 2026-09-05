@@ -63,7 +63,9 @@ screening many candidates.}
 *non-parent* candidate is related to the offspring, changing what the LOD
 score is a ratio against. The default `NULL` means unrelated, `c(1, 0, 0)`,
 which is the classical assumption. Use [ibd_mixture()] to build this from
-relationship classes. Not yet supported for `type = "pair"`.}
+relationship classes. For `type = "pair"`, either one vector applied to
+both alleged parents, or a two-row matrix or list of two giving the alleged
+mother and father separately.}
 
 \item{relatedness}{Named weights describing the relationship classes present
 among *non-parent* candidates, for example
@@ -71,7 +73,9 @@ among *non-parent* candidates, for example
 names. The LOD then becomes a ratio against the best-fitting alternative
 rather than against an unrelated stranger, which is what keeps a close
 relative of an unsampled parent from being mistaken for the parent. Mutually
-exclusive with `ibd`. Not yet supported for `type = "pair"`.}
+exclusive with `ibd`. For `type = "pair"` each alleged parent is taken to
+draw its class independently, so the mixture runs over every pair of
+classes.}
 
 \item{output}{`"long"` returns one row per comparison. `"matrix"` returns
 the offspring-by-candidate matrices directly, which is much cheaper for

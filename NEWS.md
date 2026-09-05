@@ -1,3 +1,28 @@
+# spawnR 0.5.0
+
+Extends the relatedness-aware alternative to the joint parent-pair
+configuration, which turns out to have been the most exposed of the three.
+
+* `parentage_lod(type = "pair")` now accepts `relatedness` and `ibd`. Under H2
+  neither alleged parent is a parent, but each may stand in for a relative of
+  the one it is tested as, and the offspring has only two alleles to share, so
+  the two sides enter jointly:
+  `Pr(o | am, af) = ab T(o|am,af) + a(1-b) T(o|am) + (1-a)b T(o|af) + (1-a)(1-b) P(o)`.
+  Setting `a = b = 0` recovers the classical `P(o)` and `a = b = 1` recovers the
+  numerator, so the LOD goes to zero as it must.
+* `ibd` for a pair takes one vector for both alleged parents, or a two-row
+  matrix or list of two to treat the sexes differently. `relatedness` lets each
+  alleged parent draw its class independently, mixing over every pair of classes.
+* Simulation with full sibs of both the true sire and the true dam: with both
+  true parents present, nothing is wrong (1.000 observed). With them withheld
+  half the time, a stated 0.997 became an observed 0.653, about twice the worst
+  single-parent gap, because a sib-by-sib pair mimics the true pair on both
+  sides at once. The correction recovers that to 0.946, dropping the assignment
+  rate from 75% to 50%.
+* New cross-configuration test: a pair whose alleged mother is fixed as the true
+  parent and whose alleged father is unrelated now provably collapses onto the
+  one-known formula.
+
 # spawnR 0.4.0
 
 Handles relatives in the candidate pool, the last known way the posterior could

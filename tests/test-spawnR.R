@@ -418,14 +418,68 @@ ok(inherits(try(parentage_lod(gr, pedr$offspring[1:2], simr$sires, pr, 0.01,
                 silent = TRUE), "try-error"),
    "ibd and relatedness are mutually exclusive")
 ok(inherits(try(parentage_lod(gr, pedr$offspring[1:2], simr$sires, pr, 0.01,
-                              type = "pair", mothers = simr$dams,
-                              relatedness = c(unrelated = 1)), silent = TRUE),
-            "try-error"), "relatedness is refused for the parent-pair configuration")
+                              relatedness = c(unrelated = 0.9, cousin = 0.1),
+                              ibd = c(1, 0, 0)), silent = TRUE),
+            "try-error"), "ibd and relatedness stay mutually exclusive")
 
 scr <- pool_relatedness(gr, pedr$offspring[1:4], simr$sires, pr, error = 0.01,
                         nsim = 400)
 ok(nrow(scr) == 4L && all(scr$excess_frac >= 0) && all(scr$n_above >= 0),
    "pool_relatedness returns one screen per offspring")
+
+
+## ------------------------------------------- relatedness, parent pair
+# Under H2 neither alleged parent is a parent but each may stand in for a
+# relative, so both sides enter jointly. All 48 combinations must stay proper.
+badp <- 0
+for (im in list(c(1,0,0), c(.75,.25,0), c(.5,.5,0), c(0,1,0))) {
+  for (iff in list(c(1,0,0), c(.5,.5,0), c(0,1,0))) {
+    for (e in c(0, 0.01, 0.2, 0.5)) {
+      Lp <- lik2(oa, ob, 2L, 4L, pf2, e, 1L, 3L, "pair", list(im, iff))
+      if (!near(sum(Lp$num), 1, 1e-9) || !near(sum(Lp$den), 1, 1e-9)) badp <- badp + 1
+    }
+  }
+}
+ok(badp == 0, "pair likelihoods stay proper across every ibd combination")
+
+ok(max(abs(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "pair",
+                     ibd = list(c(0,1,0), c(0,1,0))))) < 1e-12,
+   "pair: both alleged parents as parents gives a zero LOD")
+ok(max(abs(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "pair", ibd = c(1,0,0)) -
+          lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "pair"))) < 1e-12,
+   "pair: unrelated ibd reproduces the classical pair LOD")
+# Consistency across configurations: fixing the alleged mother as the true
+# parent and the father as unrelated must collapse onto the one-known formula.
+ok(max(abs(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "pair",
+                     ibd = list(c(0,1,0), c(1,0,0))) -
+          lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "one_known"))) < 1e-10,
+   "pair with a known mother reduces exactly to the one-known LOD")
+ok(is.numeric(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "pair",
+                        ibd = rbind(c(.5,.5,0), c(1,0,0)))),
+   "pair accepts asymmetric ibd as a two-row matrix")
+ok(inherits(try(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "pair",
+                          ibd = list(c(1,0,0), c(1,0,0), c(1,0,0))), silent = TRUE),
+            "try-error"), "pair rejects more than two ibd vectors")
+
+pp1 <- parentage_lod(gr, pedr$offspring[1:4], simr$sires, pr, 0.01,
+                     type = "pair", mothers = simr$dams)
+pp2 <- parentage_lod(gr, pedr$offspring[1:4], simr$sires, pr, 0.01,
+                     type = "pair", mothers = simr$dams, ibd = c(1, 0, 0))
+ok(max(abs(pp1$lod - pp2$lod)) < 1e-12,
+   "engine: pair with unrelated ibd reproduces the default")
+pp3 <- parentage_lod(gr, pedr$offspring[1:4], simr$sires, pr, 0.01,
+                     type = "pair", mothers = simr$dams,
+                     relatedness = c(unrelated = 1))
+ok(max(abs(pp1$lod - pp3$lod)) < 1e-9,
+   "engine: pair relatedness of all-unrelated reproduces the default")
+pp4 <- parentage_lod(gr, pedr$offspring[1:4], simr$sires, pr, 0.01,
+                     type = "pair", mothers = simr$dams,
+                     relatedness = c(unrelated = 0.9, avuncular = 0.1))
+k1p <- paste(pp1$offspring, pp1$candidate, pp1$candidate2)
+k4p <- paste(pp4$offspring, pp4$candidate, pp4$candidate2)
+ktp <- paste(pedr$offspring, pedr$sire, pedr$dam)
+ok(mean(pp4$lod[k4p %in% ktp]) < mean(pp1$lod[k1p %in% ktp]),
+   "a relative alternative shrinks true parent-pair LOD scores")
 
 
 cat("\nAll tests passed.\n")

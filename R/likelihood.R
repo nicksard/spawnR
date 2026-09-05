@@ -60,8 +60,10 @@
 #'   weigh several relationship classes at once use the `relatedness` argument of
 #'   [parentage_lod()] rather than averaging coefficients here: relatedness holds
 #'   for a whole genome, so the classes must be mixed over multilocus
-#'   likelihoods, not inside a per-locus denominator. Not supported for
-#'   `type = "pair"`.
+#'   likelihoods, not inside a per-locus denominator. For `type = "pair"`,
+#'   supply either one vector, applied to both alleged parents, or a two-row
+#'   matrix or list of two giving the alleged mother and the alleged father
+#'   separately.
 #'
 #' @return A numeric vector of per-locus LOD contributions. `NA` where a
 #'   required genotype is missing; `-Inf` at a locus that excludes the candidate
@@ -96,15 +98,6 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
                       type = c("one_known", "both_unknown", "pair"),
                       ibd = NULL) {
   type <- match.arg(type)
-  if (!is.null(ibd)) {
-    ibd <- as.numeric(ibd)
-    if (length(ibd) != 3L || any(ibd < 0) || abs(sum(ibd) - 1) > 1e-8) {
-      stop("`ibd` must be three non-negative coefficients summing to one.", call. = FALSE)
-    }
-    if (type == "pair") {
-      stop("`ibd` is not yet supported for type = 'pair'.", call. = FALSE)
-    }
-  }
   lk <- .locus_lik(o1, o2, c1, c2, p, error, k1, k2, type, ibd)
   .safe_log_ratio(lk$num, lk$den)
 }
@@ -116,7 +109,7 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
                        type = "one_known", ibd = NULL) {
   e <- error[1L]
   if (is.na(e) || e < 0 || e > 1) stop("`error` must lie in [0, 1].", call. = FALSE)
-  if (!is.null(ibd) && identical(as.numeric(ibd), c(1, 0, 0))) ibd <- NULL
+  ibd <- .norm_ibd(ibd, type)
 
   Po  <- geno_freq(o1, o2, p)
   T_c <- trans_prob(o1, o2, c1, c2, p)
@@ -127,7 +120,7 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
     den <- if (is.null(ibd)) Po else {
       same <- as.numeric((o1 == c1 & o2 == c2) | (o1 == c2 & o2 == c1))
       same[is.na(same)] <- NA_real_
-      u0 * (ibd[1] * Po + ibd[2] * T_c + ibd[3] * same) + (2 * u1 + u2) * Po
+      u0 * (ibd$m[1] * Po + ibd$m[2] * T_c + ibd$m[3] * same) + (2 * u1 + u2) * Po
     }
   } else {
     if (is.null(k1) || is.null(k2)) {
@@ -138,20 +131,64 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
     T_kc <- trans_prob_pair(o1, o2, k1, k2, c1, c2, p)
     num <- w0 * T_kc + w1 * (T_k + T_c + Po) + (3 * w2 + w3) * Po
     if (type == "pair") {
-      den <- Po
+      if (is.null(ibd)) {
+        den <- Po
+      } else {
+        # Under H2 neither alleged parent is a parent, but each may be related
+        # to the one it stands in for. The offspring's maternal allele is IBD
+        # with the alleged mother with probability a, its paternal allele with
+        # the alleged father with probability b, independently. The four cases
+        # give the trio, each single-parent, and the population term.
+        a <- ibd$m[2]; b <- ibd$f[2]
+        den <- w0 * (a * b * T_kc + a * (1 - b) * T_k +
+                     (1 - a) * b * T_c + (1 - a) * (1 - b) * Po) +
+               w1 * (Po + a * T_k + (1 - a) * Po + b * T_c + (1 - b) * Po) +
+               (3 * w2 + w3) * Po
+      }
     } else if (is.null(ibd)) {
       den <- w0 * T_k + w1 * (T_k + 2 * Po) + (3 * w2 + w3) * Po
     } else {
       # A non-parent candidate related to the true father shares the paternal
       # gamete with probability ibd[2]. Linear in ibd, so a mixture over
       # relationship classes is the mixture-averaged coefficient vector.
-      f <- ibd[2]
+      f <- ibd$m[2]
       den <- w0 * (f * T_kc + (1 - f) * T_k) +
              w1 * (Po + T_k + f * T_c + (1 - f) * Po) +
              (3 * w2 + w3) * Po
     }
   }
   list(num = num, den = den)
+}
+
+# Normalise the ibd argument to list(m = , f = ), dropping it entirely when it
+# says every relevant individual is unrelated. For type = "pair" a single vector
+# is applied to both alleged parents; a two-row matrix or a list of two gives
+# them separately, in the order (alleged mother, alleged father).
+.norm_ibd <- function(ibd, type) {
+  if (is.null(ibd)) return(NULL)
+  one <- function(v) {
+    v <- as.numeric(v)
+    if (length(v) != 3L || any(is.na(v)) || any(v < 0) || abs(sum(v) - 1) > 1e-8) {
+      stop("`ibd` must be three non-negative coefficients summing to one.", call. = FALSE)
+    }
+    v
+  }
+  if (type == "pair") {
+    if (is.list(ibd)) {
+      if (length(ibd) != 2L) stop("For type = 'pair', `ibd` must give one or two coefficient vectors.", call. = FALSE)
+      z <- list(m = one(ibd[[1]]), f = one(ibd[[2]]))
+    } else if (is.matrix(ibd)) {
+      if (nrow(ibd) != 2L) stop("For type = 'pair', an `ibd` matrix needs two rows.", call. = FALSE)
+      z <- list(m = one(ibd[1, ]), f = one(ibd[2, ]))
+    } else {
+      v <- one(ibd); z <- list(m = v, f = v)
+    }
+    if (identical(z$m, c(1, 0, 0)) && identical(z$f, c(1, 0, 0))) return(NULL)
+    return(z)
+  }
+  v <- one(if (is.list(ibd)) ibd[[1]] else if (is.matrix(ibd)) ibd[1, ] else ibd)
+  if (identical(v, c(1, 0, 0))) return(NULL)
+  list(m = v, f = v)
 }
 
 .safe_log_ratio <- function(num, den) {
