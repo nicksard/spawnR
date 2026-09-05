@@ -1,6 +1,6 @@
-# Clean-room derivation of the likelihood equations in `certusR`
+# Clean-room derivation of the likelihood equations in `spawnR`
 
-This note records how every equation implemented in `certusR` was obtained.
+This note records how every equation implemented in `spawnR` was obtained.
 The package was written **without reading any existing implementation's source
 code**. In particular, the source of `github.com/mahmood225/PairwisePaternity`
 (non-commercial licence, GPL-incompatible) was never fetched, cloned or read.

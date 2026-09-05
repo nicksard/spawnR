@@ -1,4 +1,4 @@
-# certusR
+# spawnR
 
 Likelihood-ratio ("LOD score") parentage inference for codominant markers, with
 locus-specific genotyping error and simulation-based confidence. Base R only —
@@ -6,13 +6,14 @@ no dependencies.
 
 ## The name
 
-Latin *certus* — "determined, resolved, certain" — is the past participle of
-*cernere*, to sift apart, to distinguish, to decide; the root that also gives
-*discern*, *criterion* and *crisis*. It is one letter from *cervus*, the red
-deer of Rum whose pedigree motivated Marshall et al. (1998) and named CERVUS.
-That distinction is the point of the package: CERVUS returns a score, and what
-is added here is how far that score can be trusted for the particular trio in
-front of you.
+To *spawn*, of an aquatic animal, is to shed eggs or milt into open water —
+from Latin *expandere*, to spread out. Spawning is reproduction you cannot
+watch: gametes are broadcast, several males may fertilise one female's clutch
+at once, and no pair is visible from the bank. That unobservability is exactly
+why genetic parentage assignment exists in these systems.
+
+It reads the other way too. To `spawn` is what a program does when it starts a
+child process. Both readings are true, which is the point.
 
 ## What it does
 
@@ -40,13 +41,13 @@ pairs with `estimate_error_rates()`.
 ## Install
 
 ```r
-install.packages("certusR_0.1.0.tar.gz", repos = NULL, type = "source")
+install.packages("spawnR_0.1.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Usage
 
 ```r
-library(certusR)
+library(spawnR)
 
 g <- genotypes(my_wide_table, id_col = "id")   # id, then 2 columns per locus
 p <- allele_freqs(g)
@@ -132,7 +133,7 @@ The full term-by-term derivation is in
 runtime:
 
 ```r
-file.show(system.file("notes", "derivation.md", package = "certusR"))
+file.show(system.file("notes", "derivation.md", package = "spawnR"))
 ```
 
 Two places where the implementation departs from a published procedure, both

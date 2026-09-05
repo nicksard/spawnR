@@ -1,4 +1,4 @@
-library(certusR)
+library(spawnR)
 
 ok <- function(cond, label) {
   if (!isTRUE(cond)) stop("FAILED: ", label, call. = FALSE)
@@ -58,7 +58,7 @@ ok(near(trans_prob_pair(1L, 2L, 1L, 1L, 2L, 2L, pf), 1),      "T2: fully determi
 ok(is.na(trans_prob(NA_integer_, 2L, 1L, 2L, pf)),            "missing alleles propagate to NA")
 
 ## ----------------------------- the error expansion is a probability model
-lik <- certusR:::.locus_lik
+lik <- spawnR:::.locus_lik
 for (e in c(0, 1e-6, 0.001, 0.01, 0.05, 0.2, 0.5, 0.9, 1)) {
   for (ty in c("one_known", "both_unknown", "pair")) {
     L <- lik(o1, o2, 2L, 4L, pf, e, 1L, 3L, ty)
@@ -261,12 +261,12 @@ ok(max(abs(vapply(seq_len(40), function(z)
                         t3$candidate2[z], "pair"),
   numeric(1)))) < 1e-9, "fast engine matches reference (parent pair)")
 
-gi <- certusR:::.geno_index(gg2)
+gi <- spawnR:::.geno_index(gg2)
 oi <- match(pedf$offspring, gg2$ids); ci <- match(gf$sires, gg2$ids)
-V <- certusR:::.build_V(gi, gi$code[oi, , drop = FALSE], NULL, pp2, ee, "both_unknown")
+V <- spawnR:::.build_V(gi, gi$code[oi, , drop = FALSE], NULL, pp2, ee, "both_unknown")
 cc <- t(gi$code[ci, , drop = FALSE]); cc[is.na(cc)] <- gi$G
-A <- certusR:::.accumulate(V$lod, cc, gi$G, "blas",   length(oi), 12L, length(ci))
-B <- certusR:::.accumulate(V$lod, cc, gi$G, "lookup", length(oi), 12L, length(ci))
+A <- spawnR:::.accumulate(V$lod, cc, gi$G, "blas",   length(oi), 12L, length(ci))
+B <- spawnR:::.accumulate(V$lod, cc, gi$G, "lookup", length(oi), 12L, length(ci))
 ok(max(abs(A - B)) < 1e-9, "the BLAS and lookup accumulation paths agree")
 
 mx <- parentage_lod(gg2, pedf$offspring, gf$sires, pp2, 0.01, output = "matrix")
@@ -280,8 +280,8 @@ ok(abs(z$lod - mx$lod[pedf$offspring[1], gf$sires[2]]) < 1e-9,
 # distribution rather than simulating alleles. Check the first two moments
 # against a direct allele-level simulation.
 set.seed(4242)
-og <- certusR:::.row_of(gg2, pedf$offspring[1])
-nn <- certusR:::.sim_backward(og, NULL, pp2, ee, 30000, 1, "both_unknown")
+og <- spawnR:::.row_of(gg2, pedf$offspring[1])
+nn <- spawnR:::.sim_backward(og, NULL, pp2, ee, 30000, 1, "both_unknown")
 alt <- replicate(30000, {
   tot <- 0
   for (l in seq_len(12)) {

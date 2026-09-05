@@ -41,7 +41,7 @@
 #' et al. (2007) likewise records typesetting errors in that paper's appendix
 #' without any change to the underlying method. See the derivation note shipped
 #' with the package, `system.file("notes", "derivation.md", package =
-#' "certusR")`, for the full argument.
+#' "spawnR")`, for the full argument.
 #'
 #' @param o1,o2 Integer allele codes of the offspring genotype at the locus.
 #' @param c1,c2 Integer allele codes of the candidate parent's genotype. For

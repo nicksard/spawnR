@@ -84,7 +84,7 @@ to one and cannot be a probability decomposition; a corrigendum to Kalinowski
 et al. (2007) likewise records typesetting errors in that paper's appendix
 without any change to the underlying method. See the derivation note shipped
 with the package, `system.file("notes", "derivation.md", package =
-"certusR")`, for the full argument.
+"spawnR")`, for the full argument.
 }
 
 \examples{
