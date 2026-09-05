@@ -90,19 +90,25 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
       k1 <- kg$a1; k2 <- kg$a2
     }
 
-    O1 <- matrix(og$a1, nsim, nc); O2 <- matrix(og$a2, nsim, nc)
-    K1 <- if (type == "one_known") matrix(k1, nsim, nc) else NULL
-    K2 <- if (type == "one_known") matrix(k2, nsim, nc) else NULL
-
-    v <- lod_locus(as.vector(O1), as.vector(O2), as.vector(C1), as.vector(C2),
-                   p = p, error = e_used[l],
-                   k1 = if (is.null(K1)) NULL else as.vector(K1),
-                   k2 = if (is.null(K2)) NULL else as.vector(K2),
-                   type = type)
-    ok <- is.finite(v)
-    v[!ok] <- 0
-    lodsum <- lodsum + matrix(v, nsim, nc)
-    n_comp <- n_comp + matrix(as.integer(ok), nsim, nc)
+    # The contribution depends on the candidate only through his genotype, so
+    # evaluate the likelihood once per distinct genotype (G of them) over the
+    # nsim simulated offspring, then reduce the nsim-by-nc block to a lookup.
+    tb <- .locus_tab(k)
+    Vl <- matrix(0, nsim, tb$G + 1L)
+    Vn <- matrix(0L, nsim, tb$G + 1L)
+    for (a in seq_len(tb$G)) {
+      v <- lod_locus(og$a1, og$a2, tb$gi[a], tb$gj[a], p = p, error = e_used[l],
+                     k1 = k1, k2 = k2, type = type)
+      fin <- is.finite(v)
+      v[!fin] <- 0
+      Vl[, a] <- v
+      Vn[, a] <- as.integer(fin)
+    }
+    ccode <- match(pmin(C1, C2) + (pmax(C1, C2) - 1L) * k, tb$gi + (tb$gj - 1L) * k)
+    ccode[is.na(ccode)] <- tb$G + 1L
+    idx <- cbind(rep(seq_len(nsim), nc), as.vector(ccode))
+    lodsum <- lodsum + matrix(Vl[idx], nsim, nc)
+    n_comp <- n_comp + matrix(Vn[idx], nsim, nc)
   }
   lodsum[n_comp == 0L] <- -Inf
 

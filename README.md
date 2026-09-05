@@ -57,6 +57,46 @@ assign_parentage(g, offs, males, p, error = er$error,
 `simulate_population()` generates a population with a known pedigree for
 calibration and testing.
 
+## Performance
+
+Base R throughout, no compiled code. The engine evaluates the likelihood once
+per distinct genotype per locus - a locus with *k* alleles has only *k(k+1)/2*
+of them - and reduces the offspring-by-candidate score to a table lookup,
+accumulated either with dense matrix products (SNP panels) or per-locus gathers
+(microsatellites).
+
+Measured on a single core:
+
+| task                                                    | time   |
+|---------------------------------------------------------|--------|
+| `parentage_lod`, 300 offspring x 300 cand x 300 SNPs     | 0.5 s  |
+| `parentage_lod`, 1000 x 2000 x 300 SNPs (matrix output)  | 3.3 s  |
+| `parentage_lod`, 500 x 500 x 15 microsatellites          | 0.7 s  |
+| `lod_null`, 10000 replicates, 300 SNPs                   | 0.19 s |
+| `assign_parentage` pairwise, 500 x 500 x 15 msats        | 4.3 s  |
+| `assign_parentage` pairwise, 500 x 500 x 300 SNPs        | 48 s   |
+
+For anything larger, `output = "matrix"` avoids building a long-format table of
+millions of rows, which by then costs more than the arithmetic.
+
+An Rcpp version of the accumulation kernel is in `inst/optional-cpp/` with
+benchmarks. It is roughly 4x faster than the matrix-product path on SNP panels,
+which is well under 2x end to end, and it would cost every user a compiler. The
+package stays dependency-free unless profiling on real data says otherwise.
+
+## Choosing a confidence criterion
+
+The two criteria control different things. The trio-specific `"pairwise"` rule
+bounds the chance of *rejecting a true parent*; it does not bound the chance
+that an unrelated candidate clears the same threshold, and that grows with the
+pool. At a nominal 99% level with 15 microsatellites and the true sire always
+present, the share of assignments that were wrong was 0% with 100 or 500
+candidates, 3.1% with 2000, and 5.6% with 5000. The Marshall `"delta"` rule
+defines confidence as the proportion of assignments that are correct and
+simulates the whole pool, so it is the one to report when screening broadly.
+See `?assign_parentage`.
+
+
 ## Provenance
 
 This is a clean-room implementation. The likelihood formulation was

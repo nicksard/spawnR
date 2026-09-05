@@ -38,11 +38,18 @@
 #' @param max_mismatch If not `NULL`, rows with more than this many mismatching
 #'   loci are dropped from the result. Useful to keep output small when
 #'   screening many candidates.
+#' @param output `"long"` returns one row per comparison. `"matrix"` returns
+#'   the offspring-by-candidate matrices directly, which is much cheaper for
+#'   large candidate sets: a thousand offspring against several thousand
+#'   candidates is millions of rows in long form, and assembling that table
+#'   costs more than computing the scores.
 #'
 #' @return A `data.frame` of class `"parentage_lod"` with one row per evaluated
 #'   combination and columns `offspring`, `candidate` (and `candidate2` for
 #'   `type = "pair"`), `n_compared`, `mismatches` and `lod`, sorted by offspring
-#'   and then decreasing LOD.
+#'   and then decreasing LOD. With `output = "matrix"`, an object of class
+#'   `"parentage_lod_matrix"`: a list of `lod`, `mismatches` and `n_compared`
+#'   matrices with offspring in rows and candidates in columns.
 #'
 #' @references
 #' Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998)
@@ -74,9 +81,11 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
                           known = NULL,
                           type = c("both_unknown", "one_known", "pair"),
                           mothers = NULL, exclude_self = TRUE,
-                          max_mismatch = NULL) {
+                          max_mismatch = NULL,
+                          output = c("long", "matrix")) {
   stopifnot(inherits(g, "genotypes"))
   type <- match.arg(type)
+  output <- match.arg(output)
   .check_freqs(freqs, g)
   nl <- n_loci(g)
   e <- .expand_error(error, nl)
@@ -117,69 +126,54 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
     k
   } else rep(NA_character_, no)
 
-  ci  <- match(cand, g$ids)
-  ci2 <- if (is.null(cand2)) NULL else match(cand2, g$ids)
-  ca1 <- g$a1[ci, , drop = FALSE]; ca2 <- g$a2[ci, , drop = FALSE]
-  cb1 <- if (is.null(ci2)) NULL else g$a1[ci2, , drop = FALSE]
-  cb2 <- if (is.null(ci2)) NULL else g$a2[ci2, , drop = FALSE]
+  gi <- .geno_index(g)
+  oi <- match(off, g$ids)
+  ci <- match(cand, g$ids)
 
-  chunks <- vector("list", no)
-  for (i in seq_len(no)) {
-    oi <- match(off[i], g$ids)
-    o1 <- g$a1[oi, ]; o2 <- g$a2[oi, ]
-
-    if (type == "one_known") {
-      if (is.na(kn[i])) {
-        kk1 <- rep(NA_integer_, nl); kk2 <- kk1
-      } else {
-        kj <- match(kn[i], g$ids)
-        kk1 <- g$a1[kj, ]; kk2 <- g$a2[kj, ]
-      }
+  if (type == "pair") {
+    c2i <- match(cand2, g$ids)
+    LOD <- MIS <- NCM <- matrix(0, no, nc)
+    for (m in unique(cand2)) {
+      j <- which(cand2 == m)
+      M <- .lod_matrix(gi, oi, ci[j], rep(match(m, g$ids), no), freqs, e, "pair")
+      LOD[, j] <- M$lod; MIS[, j] <- M$mism; NCM[, j] <- M$ncmp
     }
-
-    lodm <- matrix(NA_real_, nc, nl)
-    mism <- matrix(NA, nc, nl)
-    for (l in seq_len(nl)) {
-      p <- freqs[[l]]
-      if (type == "both_unknown") {
-        lodm[, l] <- lod_locus(o1[l], o2[l], ca1[, l], ca2[, l], p = p,
-                               error = e[l], type = "both_unknown")
-        mism[, l] <- .mismatch_locus(o1[l], o2[l], ca1[, l], ca2[, l], p,
-                                     type = "both_unknown")
-      } else if (type == "one_known") {
-        lodm[, l] <- lod_locus(o1[l], o2[l], ca1[, l], ca2[, l], p = p,
-                               error = e[l], k1 = kk1[l], k2 = kk2[l],
-                               type = "one_known")
-        mism[, l] <- .mismatch_locus(o1[l], o2[l], ca1[, l], ca2[, l], p,
-                                     k1 = kk1[l], k2 = kk2[l], type = "one_known")
-      } else {
-        lodm[, l] <- lod_locus(o1[l], o2[l], ca1[, l], ca2[, l], p = p,
-                               error = e[l], k1 = cb1[, l], k2 = cb2[, l],
-                               type = "pair")
-        mism[, l] <- .mismatch_locus(o1[l], o2[l], ca1[, l], ca2[, l], p,
-                                     k1 = cb1[, l], k2 = cb2[, l], type = "pair")
-      }
-    }
-    ok <- !is.na(lodm)
-    d <- data.frame(offspring = off[i], candidate = cand,
-                    stringsAsFactors = FALSE)
-    if (!is.null(cand2)) d$candidate2 <- cand2
-    if (type == "one_known") d$known <- kn[i]
-    d$n_compared <- rowSums(ok)
-    d$mismatches <- rowSums(mism, na.rm = TRUE)
-    lodm[!ok] <- 0
-    d$lod <- rowSums(lodm)
-    d$lod[d$n_compared == 0L] <- NA_real_
-
-    drop <- rep(FALSE, nc)
-    if (exclude_self) {
-      drop <- drop | cand == off[i]
-      if (!is.null(cand2)) drop <- drop | cand2 == off[i] | cand2 == cand
-      if (type == "one_known" && !is.na(kn[i])) drop <- drop | cand == kn[i]
-    }
-    if (!is.null(max_mismatch)) drop <- drop | d$mismatches > max_mismatch
-    chunks[[i]] <- d[!drop, , drop = FALSE]
+  } else {
+    ki <- if (type == "one_known") match(kn, g$ids) else NULL
+    M <- .lod_matrix(gi, oi, ci, ki, freqs, e, type)
+    LOD <- M$lod; MIS <- M$mism; NCM <- M$ncmp
   }
+
+  if (output == "matrix") {
+    dn <- list(off, if (is.null(cand2)) cand else paste(cand, cand2, sep = " x "))
+    lod_m <- LOD; lod_m[NCM == 0L] <- NA_real_
+    return(structure(list(lod = `dimnames<-`(lod_m, dn),
+                          mismatches = `dimnames<-`(MIS, dn),
+                          n_compared = `dimnames<-`(NCM, dn),
+                          type = type, error = e),
+                     class = "parentage_lod_matrix"))
+  }
+
+  # Long form, assembled in one pass rather than one data.frame per offspring.
+  d <- data.frame(offspring = rep(off, each = nc),
+                  candidate = rep(cand, times = no),
+                  stringsAsFactors = FALSE)
+  if (!is.null(cand2)) d$candidate2 <- rep(cand2, times = no)
+  if (type == "one_known") d$known <- rep(kn, each = nc)
+  d$n_compared <- as.integer(t(NCM))
+  d$mismatches <- as.integer(t(MIS))
+  lodv <- as.vector(t(LOD))
+  lodv[d$n_compared == 0L] <- NA_real_
+  d$lod <- lodv
+
+  drop <- rep(FALSE, nrow(d))
+  if (exclude_self) {
+    drop <- drop | d$candidate == d$offspring
+    if (!is.null(cand2)) drop <- drop | d$candidate2 == d$offspring | d$candidate2 == d$candidate
+    if (type == "one_known") drop <- drop | (!is.na(d$known) & d$candidate == d$known)
+  }
+  if (!is.null(max_mismatch)) drop <- drop | d$mismatches > max_mismatch
+  chunks <- list(d[!drop, , drop = FALSE])
 
   out <- do.call(rbind, chunks)
   rownames(out) <- NULL
@@ -277,4 +271,16 @@ delta_stat <- function(x) {
   out <- do.call(rbind, rows[!vapply(rows, is.null, logical(1))])
   rownames(out) <- NULL
   out
+}
+
+#' @param x A `"parentage_lod_matrix"` object.
+#' @param ... Ignored.
+#' @rdname parentage_lod
+#' @export
+print.parentage_lod_matrix <- function(x, ...) {
+  cat("<parentage_lod_matrix>", nrow(x$lod), "offspring x", ncol(x$lod),
+      "candidates, type =", x$type, "\n")
+  cat("  LOD range: ", paste(format(range(x$lod, na.rm = TRUE), digits = 4),
+                             collapse = " to "), "\n", sep = "")
+  invisible(x)
 }

@@ -89,6 +89,30 @@ distribution. The top candidate is assigned when its LOD reaches that
 threshold. Because a separate simulation is run per offspring, this is the
 more expensive option, and it is the one that adapts to unusual genotypes and
 to uneven missing data.
+}
+\section{Choosing a criterion}{
+
+The two criteria control different things, and the difference matters as the
+candidate pool grows. `"pairwise"` calibrates its threshold on the
+distribution of the LOD score for a *true* parent, so it controls the
+probability of rejecting a true parent - a candidate clears the bar when its
+score is one a true parent would plausibly produce. It says nothing about how
+many unrelated candidates also clear it, and with a large pool some will, by
+chance alone. In simulations with fifteen microsatellite loci and the true
+sire always present, the proportion of assignments that were wrong ran at 0%
+with 100 or 500 candidates, 3.1% with 2000 and 5.6% with 5000, all at a
+nominal 99% level.
+
+`"delta"` defines confidence the other way round, as the proportion of
+assignments above a threshold that are correct, and its simulation includes
+the whole candidate pool and the chance that the true parent is missing from
+it. That is the quantity most parentage studies actually want to report, and
+it is the one that stays interpretable as the pool grows.
+
+Use `"pairwise"` when the question is whether a specific named candidate is
+the parent, when missing data are uneven across individuals, or when the pool
+is small. Use `"delta"` when screening a large pool, and in general when
+reporting an assignment rate. Running both and comparing is cheap.
 
 `criterion = "delta"` uses the population-level rule of Marshall et al.
 (1998). One call to [sim_delta()] produces a single critical Delta for the
@@ -96,6 +120,7 @@ whole dataset, and the top candidate is assigned when the gap between the best
 and second-best LOD reaches it. This is what CERVUS reports, and it is much
 cheaper, but it applies an average threshold to every case.
 }
+
 \examples{
 sim <- simulate_population(n = 40, n_loci = 10, n_alleles = 8, seed = 9)
 p <- allele_freqs(sim$genotypes)

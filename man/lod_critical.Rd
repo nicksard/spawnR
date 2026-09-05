@@ -30,6 +30,15 @@ parents exceed the respective threshold.
 This is the opposite tail from the classical CERVUS criterion, which
 thresholds the upper tail of a distribution generated from unrelated
 candidates; see [delta_critical()] for that alternative.
+
+Note what this criterion does and does not control. It bounds the probability
+of rejecting a true parent at `alpha`. It does not bound the probability that
+an unrelated candidate clears the same threshold, and that probability grows
+with the size of the candidate pool: the threshold is a property of the trio
+being tested, not of the pool it is being searched against. For screening
+large pools, pair it with [delta_critical()], whose confidence is defined as
+the proportion of assignments that are correct. See the "Choosing a
+criterion" section of [assign_parentage()].
 }
 \examples{
 sim <- simulate_population(n = 30, n_loci = 8, n_alleles = 6, seed = 3)

@@ -3,6 +3,7 @@
 \name{parentage_lod}
 \alias{parentage_lod}
 \alias{print.parentage_lod}
+\alias{print.parentage_lod_matrix}
 \title{Multilocus LOD scores for candidate parents}
 \usage{
 parentage_lod(
@@ -15,10 +16,13 @@ parentage_lod(
   type = c("both_unknown", "one_known", "pair"),
   mothers = NULL,
   exclude_self = TRUE,
-  max_mismatch = NULL
+  max_mismatch = NULL,
+  output = c("long", "matrix")
 )
 
 \method{print}{parentage_lod}(x, ...)
+
+\method{print}{parentage_lod_matrix}(x, ...)
 }
 \arguments{
 \item{g}{A `"genotypes"` object holding all individuals referred to below.}
@@ -53,15 +57,23 @@ itself or the known parent.}
 loci are dropped from the result. Useful to keep output small when
 screening many candidates.}
 
-\item{x}{A `"parentage_lod"` object.}
+\item{output}{`"long"` returns one row per comparison. `"matrix"` returns
+the offspring-by-candidate matrices directly, which is much cheaper for
+large candidate sets: a thousand offspring against several thousand
+candidates is millions of rows in long form, and assembling that table
+costs more than computing the scores.}
 
-\item{...}{Passed to `print.data.frame`.}
+\item{x}{A `"parentage_lod_matrix"` object.}
+
+\item{...}{Ignored.}
 }
 \value{
 A `data.frame` of class `"parentage_lod"` with one row per evaluated
   combination and columns `offspring`, `candidate` (and `candidate2` for
   `type = "pair"`), `n_compared`, `mismatches` and `lod`, sorted by offspring
-  and then decreasing LOD.
+  and then decreasing LOD. With `output = "matrix"`, an object of class
+  `"parentage_lod_matrix"`: a list of `lod`, `mismatches` and `n_compared`
+  matrices with offspring in rows and candidates in columns.
 }
 \description{
 Computes the total LOD score, summed over independent loci, for every

@@ -223,4 +223,85 @@ ok(all(as2$candidate[as2$assigned] == tr2[as2$assigned]),
    "every Delta assignment made is correct")
 ok(is.data.frame(summary(as2)), "summary() returns the criterion table")
 
+## ------------------------------------------------------- fast engine
+# parentage_lod() reduces the per-candidate likelihood to a table lookup. These
+# tests hold it against a direct locus-by-locus evaluation, and hold the two
+# accumulation strategies against each other.
+ref_total <- function(g, p, e, oid, cid, kid = NULL, type = "both_unknown") {
+  oi <- match(oid, g$ids); ci <- match(cid, g$ids)
+  ki <- if (is.null(kid)) NA_integer_ else match(kid, g$ids)
+  v <- vapply(seq_len(n_loci(g)), function(l)
+    lod_locus(g$a1[oi, l], g$a2[oi, l], g$a1[ci, l], g$a2[ci, l], p[[l]], e[l],
+              k1 = if (is.null(kid)) NULL else g$a1[ki, l],
+              k2 = if (is.null(kid)) NULL else g$a2[ki, l], type = type),
+    numeric(1))
+  sum(v[is.finite(v)])
+}
+gf <- simulate_population(n = 60, n_loci = 12, n_alleles = 7, n_offspring = 30,
+                          error = 0.01, prop_missing = 0.08, seed = 1234)
+gg2 <- gf$genotypes; pp2 <- allele_freqs(gg2); ee <- rep(0.01, 12)
+pedf <- gf$pedigree
+
+t1 <- parentage_lod(gg2, pedf$offspring, gf$sires, pp2, 0.01)
+ok(max(abs(vapply(seq_len(40), function(z)
+  t1$lod[z] - ref_total(gg2, pp2, ee, t1$offspring[z], t1$candidate[z]),
+  numeric(1)))) < 1e-9, "fast engine matches locus-by-locus reference (both unknown)")
+
+t2 <- parentage_lod(gg2, pedf$offspring, gf$sires, pp2, 0.01,
+                    known = pedf$dam, type = "one_known")
+ok(max(abs(vapply(seq_len(40), function(z)
+  t2$lod[z] - ref_total(gg2, pp2, ee, t2$offspring[z], t2$candidate[z],
+                        t2$known[z], "one_known"),
+  numeric(1)))) < 1e-9, "fast engine matches reference (one parent known)")
+
+t3 <- parentage_lod(gg2, pedf$offspring[1:4], gf$sires, pp2, 0.01,
+                    type = "pair", mothers = gf$dams)
+ok(max(abs(vapply(seq_len(40), function(z)
+  t3$lod[z] - ref_total(gg2, pp2, ee, t3$offspring[z], t3$candidate[z],
+                        t3$candidate2[z], "pair"),
+  numeric(1)))) < 1e-9, "fast engine matches reference (parent pair)")
+
+gi <- parentageLR:::.geno_index(gg2)
+oi <- match(pedf$offspring, gg2$ids); ci <- match(gf$sires, gg2$ids)
+V <- parentageLR:::.build_V(gi, gi$code[oi, , drop = FALSE], NULL, pp2, ee, "both_unknown")
+cc <- t(gi$code[ci, , drop = FALSE]); cc[is.na(cc)] <- gi$G
+A <- parentageLR:::.accumulate(V$lod, cc, gi$G, "blas",   length(oi), 12L, length(ci))
+B <- parentageLR:::.accumulate(V$lod, cc, gi$G, "lookup", length(oi), 12L, length(ci))
+ok(max(abs(A - B)) < 1e-9, "the BLAS and lookup accumulation paths agree")
+
+mx <- parentage_lod(gg2, pedf$offspring, gf$sires, pp2, 0.01, output = "matrix")
+ok(inherits(mx, "parentage_lod_matrix") && all(dim(mx$lod) == c(30L, 30L)),
+   "matrix output has the right shape")
+z <- t1[t1$offspring == pedf$offspring[1] & t1$candidate == gf$sires[2], ]
+ok(abs(z$lod - mx$lod[pedf$offspring[1], gf$sires[2]]) < 1e-9,
+   "matrix and long output agree")
+
+# The null samplers draw each locus contribution from its exact discrete
+# distribution rather than simulating alleles. Check the first two moments
+# against a direct allele-level simulation.
+set.seed(4242)
+og <- parentageLR:::.row_of(gg2, pedf$offspring[1])
+nn <- parentageLR:::.sim_backward(og, NULL, pp2, ee, 30000, 1, "both_unknown")
+alt <- replicate(30000, {
+  tot <- 0
+  for (l in seq_len(12)) {
+    o1 <- og$a1[l]; o2 <- og$a2[l]
+    if (is.na(o1)) next
+    pl <- pp2[[l]]
+    a <- if (stats::runif(1) < 0.5) o1 else o2
+    b <- sample.int(length(pl), 1L, prob = pl)
+    if (stats::runif(1) < ee[l]) {
+      a <- sample.int(length(pl), 1L, prob = pl); b <- sample.int(length(pl), 1L, prob = pl)
+    }
+    v <- lod_locus(o1, o2, a, b, pl, ee[l], type = "both_unknown")
+    if (is.finite(v)) tot <- tot + v
+  }
+  tot
+})
+ok(abs(mean(nn) - mean(alt)) < 0.15 * stats::sd(alt),
+   "null sampler reproduces the allele-level mean")
+ok(abs(stats::sd(nn) - stats::sd(alt)) < 0.15 * stats::sd(alt),
+   "null sampler reproduces the allele-level spread")
+
+
 cat("\nAll tests passed.\n")

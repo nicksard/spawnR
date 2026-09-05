@@ -112,51 +112,108 @@ lod_null <- function(g, offspring = NULL, candidate = NULL, freqs, error,
             type = type, nsim = nsim, error = e, prop_typed = prop_typed)
 }
 
+# Both simulators reduce to the same structure. At each locus the genotype
+# being simulated is built from two allele draws, is then subject to a random
+# genotype replacement with probability e, and is then either scored or not.
+# So the locus contributes a discrete random variable with at most G + 1
+# outcomes, whose values and probabilities can be computed exactly and sampled
+# from directly, instead of simulating alleles for every replicate.
+
+.allele_dist <- function(alleles, k) {
+  d <- numeric(k)
+  a <- unique(alleles)
+  d[a] <- 1 / length(a)
+  d
+}
+
+# Distribution over genotype codes from two independent allele distributions.
+.geno_dist <- function(d1, d2, tb, k) {
+  M <- outer(d1, d2)
+  lo <- pmin(row(M), col(M)); hi <- pmax(row(M), col(M))
+  code <- match(as.vector(lo) + (as.vector(hi) - 1L) * k,
+                tb$gi + (tb$gj - 1L) * k)
+  as.vector(tapply(as.vector(M), factor(code, levels = seq_len(tb$G)), sum,
+                   default = 0))
+}
+
+# One locus: exact values and probabilities of the LOD contribution.
+.locus_null <- function(d1, d2, tb, p, e, prop_typed, fixed, type, role) {
+  k <- length(p)
+  Ptrue <- .geno_dist(d1, d2, tb, k)
+  Phwe  <- geno_freq(tb$gi, tb$gj, p)
+  Pobs  <- (1 - e) * Ptrue + e * Phwe
+  a1 <- tb$gi; a2 <- tb$gj
+  vals <- if (role == "candidate") {
+    lod_locus(fixed$o1, fixed$o2, a1, a2, p = p, error = e,
+              k1 = fixed$k1, k2 = fixed$k2, type = type)
+  } else {
+    lod_locus(a1, a2, fixed$c1, fixed$c2, p = p, error = e,
+              k1 = fixed$k1, k2 = fixed$k2, type = type)
+  }
+  vals[!is.finite(vals)] <- 0
+  list(vals = c(vals, 0), probs = c(prop_typed * Pobs, 1 - prop_typed))
+}
+
+.draw_sum <- function(parts, nsim) {
+  tot <- numeric(nsim)
+  for (z in parts) {
+    keep <- z$probs > 0
+    v <- z$vals[keep]; pr <- z$probs[keep]
+    if (length(v) == 1L) { tot <- tot + v; next }
+    tot <- tot + v[sample.int(length(v), nsim, TRUE, prob = pr)]
+  }
+  tot
+}
+
 # Forward: candidate (and known parent) fixed; simulate the offspring.
 .sim_forward <- function(cg, kn, freqs, e, nsim, prop_typed, type) {
-  nl <- length(freqs)
-  tot <- numeric(nsim)
+  nl <- length(freqs); parts <- vector("list", nl); m <- 0L
   for (l in seq_len(nl)) {
     c1 <- cg$a1[l]; c2 <- cg$a2[l]
     k1 <- if (is.null(kn)) NA_integer_ else kn$a1[l]
     k2 <- if (is.null(kn)) NA_integer_ else kn$a2[l]
     if (is.na(c1) || (type == "one_known" && is.na(k1))) next
-    p <- freqs[[l]]
-    from_c <- .pick2(c1, c2, nsim)
-    from_o <- if (type == "one_known") .pick2(k1, k2, nsim)
-              else sample.int(length(p), nsim, TRUE, prob = p)
-    o <- .apply_error(from_c, from_o, e[l], p)
-    o <- .apply_missing(o, prop_typed)
-    v <- lod_locus(o$a1, o$a2, c1, c2, p = p, error = e[l],
-                   k1 = k1, k2 = k2, type = type)
-    v[!is.finite(v)] <- 0
-    tot <- tot + v
+    p <- freqs[[l]]; k <- length(p); tb <- .locus_tab(k)
+    d1 <- .allele_dist(c(c1, c2), k)
+    d2 <- if (type == "one_known") .allele_dist(c(k1, k2), k) else p
+    m <- m + 1L
+    parts[[m]] <- .locus_null(d1, d2, tb, p, e[l], prop_typed,
+                              list(c1 = c1, c2 = c2, k1 = k1, k2 = k2),
+                              type, "offspring")
   }
-  tot
+  .draw_sum(parts[seq_len(m)], nsim)
 }
 
 # Backward: offspring (and known parent) fixed; simulate the true parent.
 .sim_backward <- function(og, kn, freqs, e, nsim, prop_typed, type) {
-  nl <- length(freqs)
-  tot <- numeric(nsim)
+  nl <- length(freqs); parts <- vector("list", nl); m <- 0L
   for (l in seq_len(nl)) {
     o1 <- og$a1[l]; o2 <- og$a2[l]
     k1 <- if (is.null(kn)) NA_integer_ else kn$a1[l]
     k2 <- if (is.null(kn)) NA_integer_ else kn$a2[l]
     if (is.na(o1) || (type == "one_known" && is.na(k1))) next
-    p <- freqs[[l]]
+    p <- freqs[[l]]; k <- length(p); tb <- .locus_tab(k)
     opts <- if (type == "one_known") .paternal_options(o1, o2, k1, k2) else c(o1, o2)
-    from_o <- if (length(opts) == 1L) rep(opts, nsim) else .pick2(opts[1L], opts[2L], nsim)
-    from_p <- sample.int(length(p), nsim, TRUE, prob = p)
-    cand <- .apply_error(from_o, from_p, e[l], p)
-    cand <- .apply_missing(cand, prop_typed)
-    v <- lod_locus(o1, o2, cand$a1, cand$a2, p = p, error = e[l],
-                   k1 = k1, k2 = k2, type = type)
-    v[!is.finite(v)] <- 0
-    tot <- tot + v
+    d1 <- .allele_dist(opts, k)
+    m <- m + 1L
+    parts[[m]] <- .locus_null(d1, p, tb, p, e[l], prop_typed,
+                              list(o1 = o1, o2 = o2, k1 = k1, k2 = k2),
+                              type, "candidate")
   }
-  tot
+  .draw_sum(parts[seq_len(m)], nsim)
 }
+
+.locus_tab <- local({
+  cache <- new.env(parent = emptyenv())
+  function(k) {
+    key <- as.character(k)
+    if (!is.null(cache[[key]])) return(cache[[key]])
+    gi <- unlist(lapply(seq_len(k), function(i) rep(i, k - i + 1L)))
+    gj <- unlist(lapply(seq_len(k), function(i) seq.int(i, k)))
+    cache[[key]] <- list(gi = gi, gj = gj, G = length(gi))
+    cache[[key]]
+  }
+})
 
 # Offspring alleles that could have come from the father, given the mother.
 .paternal_options <- function(o1, o2, k1, k2) {
@@ -165,30 +222,6 @@ lod_null <- function(g, offspring = NULL, candidate = NULL, freqs, error,
   if (o2 %in% c(k1, k2)) opts <- c(opts, o1)
   if (length(opts) == 0L) opts <- c(o1, o2)   # incompatible: fall back to either
   unique(opts)
-}
-
-.pick2 <- function(a, b, n) if (a == b) rep(a, n) else ifelse(stats::runif(n) < 0.5, a, b)
-
-.apply_error <- function(a1, a2, e, p) {
-  n <- length(a1)
-  if (e > 0) {
-    hit <- stats::runif(n) < e
-    m <- sum(hit)
-    if (m > 0) {
-      a1[hit] <- sample.int(length(p), m, TRUE, prob = p)
-      a2[hit] <- sample.int(length(p), m, TRUE, prob = p)
-    }
-  }
-  list(a1 = a1, a2 = a2)
-}
-
-.apply_missing <- function(x, prop_typed) {
-  if (prop_typed < 1) {
-    gone <- stats::runif(length(x$a1)) >= prop_typed
-    x$a1[gone] <- NA_integer_
-    x$a2[gone] <- NA_integer_
-  }
-  x
 }
 
 #' Critical LOD values from a trio-specific null distribution
@@ -204,6 +237,15 @@ lod_null <- function(g, offspring = NULL, candidate = NULL, freqs, error,
 #' This is the opposite tail from the classical CERVUS criterion, which
 #' thresholds the upper tail of a distribution generated from unrelated
 #' candidates; see [delta_critical()] for that alternative.
+#'
+#' Note what this criterion does and does not control. It bounds the probability
+#' of rejecting a true parent at `alpha`. It does not bound the probability that
+#' an unrelated candidate clears the same threshold, and that probability grows
+#' with the size of the candidate pool: the threshold is a property of the trio
+#' being tested, not of the pool it is being searched against. For screening
+#' large pools, pair it with [delta_critical()], whose confidence is defined as
+#' the proportion of assignments that are correct. See the "Choosing a
+#' criterion" section of [assign_parentage()].
 #'
 #' @param x A `"lod_null"` object from [lod_null()].
 #' @param alpha Significance levels.
@@ -245,4 +287,30 @@ print.lod_null <- function(x, ...) {
       ", 1st pct ", format(stats::quantile(as.numeric(x), 0.01, names = FALSE), digits = 4),
       "\n", sep = "")
   invisible(x)
+}
+
+# Allele-level helpers, used by the population-level simulation in sim_delta()
+# and as the reference implementation the null samplers are tested against.
+.pick2 <- function(a, b, n) if (a == b) rep(a, n) else ifelse(stats::runif(n) < 0.5, a, b)
+
+.apply_error <- function(a1, a2, e, p) {
+  n <- length(a1)
+  if (e > 0) {
+    hit <- stats::runif(n) < e
+    m <- sum(hit)
+    if (m > 0) {
+      a1[hit] <- sample.int(length(p), m, TRUE, prob = p)
+      a2[hit] <- sample.int(length(p), m, TRUE, prob = p)
+    }
+  }
+  list(a1 = a1, a2 = a2)
+}
+
+.apply_missing <- function(x, prop_typed) {
+  if (prop_typed < 1) {
+    gone <- stats::runif(length(x$a1)) >= prop_typed
+    x$a1[gone] <- NA_integer_
+    x$a2[gone] <- NA_integer_
+  }
+  x
 }
