@@ -1,8 +1,18 @@
-# parentageLR
+# certusR
 
 Likelihood-ratio ("LOD score") parentage inference for codominant markers, with
 locus-specific genotyping error and simulation-based confidence. Base R only —
 no dependencies.
+
+## The name
+
+Latin *certus* — "determined, resolved, certain" — is the past participle of
+*cernere*, to sift apart, to distinguish, to decide; the root that also gives
+*discern*, *criterion* and *crisis*. It is one letter from *cervus*, the red
+deer of Rum whose pedigree motivated Marshall et al. (1998) and named CERVUS.
+That distinction is the point of the package: CERVUS returns a score, and what
+is added here is how far that score can be trusted for the particular trio in
+front of you.
 
 ## What it does
 
@@ -30,13 +40,13 @@ pairs with `estimate_error_rates()`.
 ## Install
 
 ```r
-install.packages("parentageLR_0.1.0.tar.gz", repos = NULL, type = "source")
+install.packages("certusR_0.1.0.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Usage
 
 ```r
-library(parentageLR)
+library(certusR)
 
 g <- genotypes(my_wide_table, id_col = "id")   # id, then 2 columns per locus
 p <- allele_freqs(g)
@@ -122,7 +132,7 @@ The full term-by-term derivation is in
 runtime:
 
 ```r
-file.show(system.file("notes", "derivation.md", package = "parentageLR"))
+file.show(system.file("notes", "derivation.md", package = "certusR"))
 ```
 
 Two places where the implementation departs from a published procedure, both

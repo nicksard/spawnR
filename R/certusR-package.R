@@ -1,7 +1,16 @@
-#' parentageLR: likelihood-ratio parentage inference
+#' certusR: likelihood-ratio parentage inference
 #'
 #' A dependency-free implementation of likelihood-ratio parentage inference for
 #' codominant markers, reconstructed from the primary literature.
+#'
+#' @section The name:
+#' Latin \emph{certus}, "determined, resolved, certain": the past participle of
+#' \emph{cernere}, to sift apart, to distinguish, to decide. The same root gives
+#' English \emph{discern}, \emph{criterion} and \emph{crisis}. It is also one
+#' letter from \emph{cervus}, the red deer of the Isle of Rum whose pedigree
+#' motivated Marshall et al. (1998) and gave CERVUS its name. The distinction is
+#' the point: CERVUS returns a score, and what this package adds is how far that
+#' score can be trusted for the particular trio in front of you.
 #'
 #' @section Workflow:
 #' \enumerate{
@@ -24,7 +33,7 @@
 #' a corrigendum to Kalinowski et al. (2007) records typesetting errors in that
 #' paper's appendix, and the coefficients of Amiri Roudbar et al. (2025) show the
 #' same damage. The full argument, with the term-by-term derivation, is in
-#' `system.file("notes", "derivation.md", package = "parentageLR")`.
+#' `system.file("notes", "derivation.md", package = "certusR")`.
 #'
 #' @references
 #' Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998)

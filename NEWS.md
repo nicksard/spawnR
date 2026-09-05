@@ -1,4 +1,10 @@
-# parentageLR 0.2.0
+# certusR
+
+Renamed from `parentageLR`. Latin *certus*, "decided, certain", from *cernere*
+"to distinguish, to decide" — and one letter from *cervus*. No code changed in
+the rename.
+
+# certusR 0.2.0
 
 Performance. Results are unchanged; the test suite holds the new engine against
 a locus-by-locus reference implementation and the new null samplers against the
@@ -23,7 +29,7 @@ allele-level ones they replace.
   benchmarks, for anyone who later needs it. The package itself stays
   dependency-free and has no compiled code.
 
-# parentageLR 0.1.0
+# certusR 0.1.0
 
 First release.
 

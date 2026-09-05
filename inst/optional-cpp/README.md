@@ -1,6 +1,6 @@
 # Optional compiled accumulation kernel
 
-`parentageLR` is deliberately dependency-free and contains no compiled code, so
+`certusR` is deliberately dependency-free and contains no compiled code, so
 it installs anywhere R does, with no toolchain and no Rtools on Windows. The
 pure-R engine reduces the per-candidate likelihood to a table lookup and then
 accumulates it either with dense matrix products (small numbers of distinct
@@ -27,7 +27,7 @@ To try it:
 
 ```r
 Rcpp::sourceCpp(system.file("optional-cpp", "lod_accumulate.cpp",
-                            package = "parentageLR"))
+                            package = "certusR"))
 # lod_acc2(ocode, ccode, as.numeric(LT), G)
 ```
 

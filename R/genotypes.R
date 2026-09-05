@@ -1,7 +1,7 @@
 #' Genotype containers for parentage analysis
 #'
 #' `genotypes()` converts a wide-format table of codominant marker data into
-#' the compact integer representation used throughout \pkg{parentageLR}. The
+#' the compact integer representation used throughout \pkg{certusR}. The
 #' input has one row per individual, an identifier column, and then two adjacent
 #' columns per locus holding the two observed alleles.
 #'
