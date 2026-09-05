@@ -304,4 +304,64 @@ ok(abs(stats::sd(nn) - stats::sd(alt)) < 0.15 * stats::sd(alt),
    "null sampler reproduces the allele-level spread")
 
 
+## --------------------------------------------------------- posterior
+simp <- simulate_population(n = 300, n_loci = 12, n_alleles = 8,
+                            n_offspring = 80, error = 0.01, seed = 5150)
+gp <- simp$genotypes; pq <- allele_freqs(gp); pedp <- simp$pedigree
+mp <- parentage_lod(gp, pedp$offspring, simp$sires, pq, 0.01, output = "matrix")
+
+po <- parentage_posterior(mp, prop_sampled = 0.9, full = TRUE)
+PM <- attr(po, "posterior_matrix")
+tot <- rowSums(PM, na.rm = TRUE) + po$post_unsampled
+ok(max(abs(tot - 1)) < 1e-9, "posteriors and post_unsampled sum to one")
+ok(all(po$posterior >= 0 & po$posterior <= 1), "posteriors lie in [0, 1]")
+
+ok(all(parentage_posterior(mp, prop_sampled = 1)$post_unsampled == 0),
+   "prop_sampled = 1 leaves no room for an unsampled parent")
+p0 <- parentage_posterior(mp, prop_sampled = 0)
+ok(all(p0$post_unsampled == 1) && all(p0$posterior == 0),
+   "prop_sampled = 0 puts all mass on the unsampled parent")
+
+# The prior is spread over the pool, so the same evidence buys less confidence
+# in a bigger one. This is what makes the posterior pool-aware.
+a1 <- parentage_posterior(mp, prop_sampled = 0.9, n_candidates = 100)$posterior
+a2 <- parentage_posterior(mp, prop_sampled = 0.9, n_candidates = 10000)$posterior
+ok(all(a2 <= a1 + 1e-12) && mean(a2) < mean(a1),
+   "a larger candidate pool lowers the posterior for identical LOD scores")
+
+# Log-scale arithmetic must survive scores that would overflow exp().
+big <- mp
+big$lod[] <- big$lod * 40
+ok(all(is.finite(parentage_posterior(big, prop_sampled = 0.9)$posterior)),
+   "posterior is computed on the log scale and survives huge LOD scores")
+
+truth <- pedp$sire[match(po$offspring, pedp$offspring)]
+hi <- po$posterior >= 0.95
+ok(sum(hi) > 20 && mean(po$candidate[hi] == truth[hi]) >= 0.95,
+   "assignments at posterior >= 0.95 are at least 95% correct")
+ok(abs(sum(1 - po$posterior) - sum(po$candidate != truth)) <
+   3 * sqrt(sum(po$posterior * (1 - po$posterior))) + 1,
+   "expected number of errors matches the observed count")
+
+fd <- parentage_fdr(po, target = 0.05)
+ok(fd$fdr <= 0.05 + 1e-9 && fd$n_assigned > 0, "parentage_fdr respects its target")
+ok(parentage_fdr(po, 0.20)$n_assigned >= fd$n_assigned,
+   "a looser FDR target assigns at least as many")
+
+ap <- assign_parentage(gp, pedp$offspring, simp$sires, pq, error = 0.01,
+                       prop_sampled = 0.9)
+ok(identical(attr(ap, "criterion"), "posterior"), "posterior is the default criterion")
+trp <- pedp$sire[match(ap$offspring, pedp$offspring)]
+ok(all(ap$candidate[ap$assigned] == trp[ap$assigned]),
+   "every posterior assignment made is correct")
+ok(inherits(try(assign_parentage(gp, pedp$offspring[1:3], simp$sires, pq,
+                                 error = 0.01, prop_sampled = NULL),
+                silent = TRUE), "try-error"),
+   "criterion = 'posterior' requires prop_sampled")
+
+ok(nrow(parentage_posterior(parentage_lod(gp, pedp$offspring[1:5], simp$sires, pq, 0.01),
+                            prop_sampled = 0.9)) == 5L,
+   "posterior accepts a long-format LOD table")
+
+
 cat("\nAll tests passed.\n")

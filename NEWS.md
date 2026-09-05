@@ -1,3 +1,28 @@
+# spawnR 0.3.0
+
+Adds a posterior criterion, which resolves the trade-off between the two
+threshold rules, and two vignettes documenting the problem and the fix.
+
+* `parentage_posterior()` returns the probability that each candidate is the
+  parent, given the LOD scores, the size of the pool searched, and a prior
+  `prop_sampled` that the true parent is in it. Trio-specific and pool-aware at
+  once. Computed on the log scale.
+* `parentage_fdr()` chooses a posterior cutoff controlling the expected false
+  discovery rate, using the fact that calibrated posteriors make the expected
+  number of errors a sum of `1 - posterior`.
+* `assign_parentage(criterion = "posterior")` is now the default. It requires
+  `prop_sampled`, which is a modelling assumption rather than a default.
+* `vignette("criteria")` documents, by factorial simulation, that the
+  trio-specific rule holds recall near-constant while precision falls to 54%
+  over pools of 50 to 5000 and sampling fractions of 1 to 0.5, and that the
+  Delta rule fails in exactly the mirror direction, holding precision while
+  recall falls to 54%.
+* `vignette("posterior")` shows the posterior is calibrated across that whole
+  design, holds precision between 98.5% and 100% in every cell, costs at most
+  2.3 points of precision under a prior misspecified by 0.4, and controls FDR
+  to its target.
+* Simulation scripts behind both vignettes ship in `inst/studies/`.
+
 # spawnR
 
 Renamed from `parentageLR` (briefly `certusR`). To spawn is to shed gametes

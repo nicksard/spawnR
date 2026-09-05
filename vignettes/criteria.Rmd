@@ -1,0 +1,140 @@
+---
+title: "What the confidence criteria actually control"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{What the confidence criteria actually control}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(spawnR)
+```
+
+A parentage assignment can fail in two directions. You can reject a parent who
+really is the parent, or you can accept a candidate who is not. The two
+threshold criteria in this package control one of those each, and neither
+controls both. Which one you use changes what your assignment rate means, and
+the difference gets larger as the candidate pool grows.
+
+## The two rules
+
+**The trio-specific rule** of Amiri Roudbar et al. (2025), `criterion =
+"pairwise"`, simulates the LOD score a *true* parent of this particular
+offspring would produce, given its genotypes and its pattern of missing data,
+and takes a lower-tail quantile. A candidate is accepted when its score is one a
+true parent would plausibly have produced. What that bounds is the chance of
+rejecting a true parent. It says nothing about how many unrelated candidates
+also clear the bar.
+
+**The population rule** of Marshall et al. (1998), `criterion = "delta"`,
+defines confidence as the proportion of simulated assignments above a threshold
+in which the top candidate really is the parent, and simulates the whole
+candidate pool including the chance that the true parent was never sampled. What
+that bounds is the share of assignments that are wrong.
+
+## A factorial simulation
+
+Fifteen microsatellite loci with ten alleles each, 1% genotyping error, 5%
+missing data, 400 offspring. Candidate pools of 50 to 5000 males, and a
+proportion `prop_sampled` of offspring whose true sire is actually in the pool.
+The full script is in `system.file("studies", "01-criteria-factorial.R", package
+= "spawnR")`.
+
+Three numbers per cell. **Assigned** is the share of offspring given a parent.
+**Precision** is the share of those assignments that are correct. **Recall** is
+the share of offspring *whose sire was in the pool* that were correctly
+assigned.
+
+```{r, echo = FALSE}
+res <- read.csv(text = "
+n_cand,prop_sampled,pw_assigned,pw_precision,pw_recall,d_assigned,d_precision,d_recall
+50,1.00,97.2,100.0,97.2,99.8,100.0,99.8
+50,0.80,83.0,99.4,97.3,86.0,98.5,100.0
+50,0.50,48.5,95.4,96.9,52.5,90.5,99.5
+200,1.00,97.2,99.7,97.0,100.0,99.8,99.8
+200,0.80,82.0,98.5,96.7,86.5,96.0,99.4
+200,0.50,54.2,93.5,96.7,54.0,93.1,95.7
+1000,1.00,97.8,98.2,96.0,100.0,97.8,97.8
+1000,0.80,82.5,91.8,95.3,77.0,94.5,91.5
+1000,0.50,59.8,75.3,96.3,40.8,92.0,80.2
+5000,1.00,98.5,93.1,91.8,94.5,95.0,89.8
+5000,0.80,91.5,83.1,92.7,64.0,94.1,73.5
+5000,0.50,77.8,54.0,91.8,26.0,95.2,54.1")
+knitr::kable(res, col.names = c("candidates", "prop sampled",
+  "assigned", "precision", "recall", "assigned", "precision", "recall"),
+  caption = "Left three columns: pairwise criterion at alpha = 0.01. Right three: Delta at 95%.")
+```
+
+## The two rules fail in opposite directions
+
+Read down the **pairwise recall** column: 97, 97, 97, 97, 97, 97, 96, 95, 96,
+92, 93, 92. It barely moves. Pool size and sampling fraction change it by a few
+points at most, which is exactly right, because the criterion is built from the
+true-parent distribution and that distribution does not know how many other
+candidates exist.
+
+Now read **pairwise precision**: 100, 99, 95, 100, 99, 94, 98, 92, 75, 93, 83,
+54. It collapses. Two things drive it and they multiply. A bigger pool offers
+more unrelated males, one of which may clear a fixed bar by chance. A lower
+sampling fraction means more offspring have no true sire available at all, so
+every assignment made for them is necessarily wrong.
+
+The Delta criterion is the mirror image. Its precision holds between 90% and
+100% everywhere, which is what it was designed to do. Its recall is what gives
+way: 99.8 down to 54.1. It buys precision by refusing to assign, and in the
+hardest cell it assigns only 26% of offspring.
+
+So the choice is not which criterion is better. It is which error you would
+rather make, and how you intend to describe the result.
+
+## What this means for a results section
+
+If you report "we assigned parentage to 78% of offspring with 99% confidence"
+using the pairwise criterion in a 5000-candidate pool with half the sires
+sampled, that 99% refers to the chance of not rejecting a true sire. Nearly half
+of the assignments you just reported are wrong. The number is not incorrect; it
+is answering a question nobody asked.
+
+If you report the same study under Delta, you assign 26% of offspring and about
+95% of those are right, but you have thrown away most of your data and the
+discarded offspring are not a random subset of them.
+
+Neither rule reports the thing you would most like to state, which is the
+probability that *this* assignment is correct. That is what
+`vignette("posterior", package = "spawnR")` is about.
+
+## Seeing it on a small scale
+
+```{r}
+sim <- simulate_population(n = 400, n_loci = 15, n_alleles = 10,
+                           n_offspring = 60, error = 0.01, seed = 11)
+p <- allele_freqs(sim$genotypes)
+ped <- sim$pedigree
+
+pw <- assign_parentage(sim$genotypes, ped$offspring, sim$sires, p,
+                       error = 0.01, criterion = "pairwise", nsim = 1000)
+truth <- ped$sire[match(pw$offspring, ped$offspring)]
+c(assigned = sum(pw$assigned),
+  correct  = sum(pw$assigned & pw$candidate == truth))
+```
+
+With 200 candidates and every sire sampled this is the easy corner of the table,
+and the pairwise rule does well. The failure only appears once the pool is large
+or the sampling fraction is low, which is why it is easy to miss in a pilot
+study and costly in a real one.
+
+## References
+
+Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998) Statistical
+confidence for likelihood-based paternity inference in natural populations.
+*Molecular Ecology* **7**, 639-655.
+
+Kalinowski, S.T., Taper, M.L. & Marshall, T.C. (2007) Revising how the computer
+program CERVUS accommodates genotyping error increases success in paternity
+assignment. *Molecular Ecology* **16**, 1099-1106.
+
+Amiri Roudbar, M., Mousavi, S.F., Akbarzadeh, M., Brounts, S.H. & Momen, M.
+(2025) Pairwise paternity assignment with forward-backward simulations.
+*Ecology and Evolution* **15**(10), e72230.
