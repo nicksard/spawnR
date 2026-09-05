@@ -1,0 +1,27 @@
+Package: parentageLR
+Type: Package
+Title: Likelihood-Ratio Parentage Inference with Locus-Specific Genotyping Error
+Version: 0.1.0
+Authors@R: person(given = "Nick", family = "Sard",
+    email = "nicksard@gmail.com", role = c("aut", "cre"))
+Description: A dependency-free implementation of likelihood-ratio ("LOD score")
+    parentage inference for codominant markers. LOD scores are computed for
+    three configurations - a single candidate parent with the other parent
+    known, a single candidate parent with both parents unknown, and a candidate
+    parent pair evaluated jointly - under a random-genotype-replacement model of
+    genotyping error that permits a separate error rate at every locus.
+    Statistical confidence is obtained either from the classical population-level
+    Delta criterion of Marshall et al. (1998) <doi:10.1046/j.1365-294x.1998.00374.x>
+    or from trio-specific null distributions built by the forward and backward
+    simulation scheme of Amiri Roudbar et al. (2025) <doi:10.1002/ece3.72230>.
+    The genotyping-error expansion follows the correction of Kalinowski et al.
+    (2007) <doi:10.1111/j.1365-294X.2007.03089.x>, re-derived from the published
+    error model so that the error weights form a proper probability
+    decomposition; see the package's derivation note for details.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.0.0)
+Imports: stats, utils
+RoxygenNote: 7.3.2
+URL: https://github.com/nicksard/parentageLR
+BugReports: https://github.com/nicksard/parentageLR/issues
