@@ -364,4 +364,68 @@ ok(nrow(parentage_posterior(parentage_lod(gp, pedp$offspring[1:5], simp$sires, p
    "posterior accepts a long-format LOD table")
 
 
+## ------------------------------------------------------- relatedness
+ok(identical(unname(ibd_mixture(unrelated = 1)), c(1, 0, 0)), "ibd_mixture: unrelated")
+ok(identical(unname(ibd_mixture(parent = 1)), c(0, 1, 0)), "ibd_mixture: parent")
+ok(all(abs(ibd_mixture(unrelated = 1, avuncular = 1) - c(0.75, 0.25, 0)) < 1e-12),
+   "ibd_mixture averages classes and normalises weights")
+ok(inherits(try(ibd_mixture(nephew = 1), silent = TRUE), "try-error"),
+   "ibd_mixture rejects unknown classes")
+
+pf2 <- c(0.4, 0.25, 0.2, 0.1, 0.05)
+G2 <- unique(t(apply(t(utils::combn(rep(seq_along(pf2), 2), 2)), 1, sort)))
+oa <- G2[, 1]; ob <- G2[, 2]
+lik2 <- spawnR:::.locus_lik
+for (ib in list(c(1,0,0), c(.75,.25,0), c(.5,.5,0), c(.25,.5,.25), c(0,1,0))) {
+  for (ty in c("both_unknown", "one_known")) {
+    for (e in c(0, 0.01, 0.2)) {
+      L2 <- lik2(oa, ob, 2L, 4L, pf2, e, 1L, 3L, ty, ib)
+      if (!near(sum(L2$num), 1, 1e-9) || !near(sum(L2$den), 1, 1e-9)) {
+        stop("relatedness-aware likelihood is not a distribution: ", ty, " e=", e)
+      }
+    }
+  }
+}
+ok(TRUE, "relatedness-aware denominators remain proper distributions")
+
+ok(max(abs(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "one_known", ibd = c(0,1,0)))) < 1e-12,
+   "an ibd of parent makes the LOD identically zero")
+ok(max(abs(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "one_known", ibd = c(1,0,0)) -
+          lod_locus(oa, ob, 2L, 4L, pf2, 0.01, 1L, 3L, "one_known"))) < 1e-12,
+   "an ibd of unrelated reproduces the classical LOD")
+ok(inherits(try(lod_locus(oa, ob, 2L, 4L, pf2, 0.01, ibd = c(0.5, 0.6, 0)), silent = TRUE),
+            "try-error"), "ibd coefficients must sum to one")
+
+simr <- simulate_population(n = 300, n_loci = 12, n_alleles = 8,
+                            n_offspring = 40, error = 0.01, seed = 606)
+gr <- simr$genotypes; pr <- allele_freqs(gr); pedr <- simr$pedigree
+base <- parentage_lod(gr, pedr$offspring, simr$sires, pr, 0.01)
+same <- parentage_lod(gr, pedr$offspring, simr$sires, pr, 0.01,
+                      relatedness = c(unrelated = 1))
+ok(max(abs(base$lod - same$lod)) < 1e-9,
+   "relatedness of all-unrelated reproduces the default LOD")
+
+rel <- parentage_lod(gr, pedr$offspring, simr$sires, pr, 0.01,
+                     relatedness = c(unrelated = 0.95, avuncular = 0.05))
+kb <- paste(base$offspring, base$candidate); kt <- paste(pedr$offspring, pedr$sire)
+kr <- paste(rel$offspring, rel$candidate)
+ok(mean(rel$lod[kr %in% kt]) < mean(base$lod[kb %in% kt]),
+   "a relative alternative shrinks the true parent's LOD")
+ok(identical(base$mismatches, rel$mismatches[match(kb, kr)]),
+   "mismatch counts do not depend on the alternative hypothesis")
+ok(inherits(try(parentage_lod(gr, pedr$offspring[1:2], simr$sires, pr, 0.01,
+                              ibd = c(1,0,0), relatedness = c(unrelated = 1)),
+                silent = TRUE), "try-error"),
+   "ibd and relatedness are mutually exclusive")
+ok(inherits(try(parentage_lod(gr, pedr$offspring[1:2], simr$sires, pr, 0.01,
+                              type = "pair", mothers = simr$dams,
+                              relatedness = c(unrelated = 1)), silent = TRUE),
+            "try-error"), "relatedness is refused for the parent-pair configuration")
+
+scr <- pool_relatedness(gr, pedr$offspring[1:4], simr$sires, pr, error = 0.01,
+                        nsim = 400)
+ok(nrow(scr) == 4L && all(scr$excess_frac >= 0) && all(scr$n_above >= 0),
+   "pool_relatedness returns one screen per offspring")
+
+
 cat("\nAll tests passed.\n")

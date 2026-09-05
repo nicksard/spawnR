@@ -1,0 +1,166 @@
+---
+title: "Relatives in the candidate pool"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Relatives in the candidate pool}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(spawnR)
+```
+
+The posterior in `vignette("posterior")` assumes candidates are unrelated to the
+offspring except under the hypothesis being tested. Real candidate pools are
+rarely like that: hatchery broodstock, a spawning shoal, a trapped run, all
+contain sibs and cousins. This vignette measures what that does, shows a
+plausible correction that does not work and why, and gives one that does.
+
+## It takes two things going wrong at once
+
+Pools were seeded with known full sibs of the true sire, then the sire himself
+was withheld from a fraction of offspring. Assignments taken at posterior >= 0.95.
+
+```{r, echo = FALSE}
+d <- read.csv(text = "
+panel,full_sibs,pi_sire,stated,observed
+15 msat,0,1.0,1.000,1.000
+15 msat,0,0.5,0.996,0.997
+15 msat,10,1.0,0.996,0.997
+15 msat,3,0.5,0.996,0.921
+15 msat,10,0.5,0.993,0.838
+96 SNP,10,1.0,0.999,0.999
+96 SNP,3,0.5,0.997,0.967
+96 SNP,10,0.5,0.997,0.921")
+knitr::kable(d, col.names = c("panel", "full sibs of sire", "prop sire sampled",
+                              "stated posterior", "observed correct"))
+```
+
+Neither condition alone does harm. Ten full sibs with every sire sampled: 0.996
+stated, 0.997 observed. Half the sires missing with no relatives: 0.996 stated,
+0.997 observed. Both together: 0.993 stated, **0.838** observed.
+
+The reason is that the model has only two explanations for a candidate who
+shares a lot of alleles with the offspring, namely *parent* and *stranger*. When
+the parent is genuinely absent, his full sib is the best available explanation,
+and with no hypothesis for "close relative of the parent" the probability that
+should have gone to `post_unsampled` lands on the sib instead. With the sire
+present he simply outscores his sib and nothing goes wrong, which is why this
+failure is invisible in a validation set where every parent is known.
+
+## A correction that does not work
+
+The obvious repair is to make the alternative hypothesis a mixture: a non-parent
+candidate is unrelated with probability 0.95 and avuncular with probability
+0.05, so the per-locus denominator becomes
+
+$$k_0 P(o) + k_1 T(o \mid c) + k_2 \mathbb{1}\{o = c\}$$
+
+evaluated at the mixture-averaged coefficients. The likelihood is linear in
+$(k_0, k_1, k_2)$, so a mixture of classes really is the average vector, and the
+algebra is exact. It also barely helps:
+
+```{r, echo = FALSE}
+d2 <- read.csv(text = "
+cell,naive,product_of_mixtures,mixture_of_products
+15 msat / 3 FS / pi 0.5,0.921,0.925,0.978
+15 msat / 10 FS / pi 0.5,0.838,0.848,0.907
+96 SNP / 3 FS / pi 0.5,0.967,0.967,0.991
+96 SNP / 10 FS / pi 0.5,0.921,0.926,0.987")
+knitr::kable(d2, col.names = c("cell", "naive", "per-locus mixture",
+                               "multilocus mixture"),
+             caption = "Observed proportion correct among assignments at posterior >= 0.95.")
+```
+
+The averaged coefficient is small, $k_1 = 0.025$ for a pool that is 5%
+avuncular, so each locus gains a modest constant to its denominator. True
+parents and their sibs both lose about the same amount, and the *difference*
+between them, which is the only thing that decides the assignment, is almost
+unchanged.
+
+The deeper error is structural. A candidate either is or is not a sib, one state
+for the whole genome. Mixing inside the per-locus denominator instead models an
+independent coin flip at every locus, which is a different and much weaker
+hypothesis. It is a **product of mixtures** where the biology is a **mixture of
+products**.
+
+## The correction that does work
+
+Evaluate the multilocus likelihood separately under each relationship class and
+mix at the end. Writing $L_c$ for the LOD against class $c$ alone,
+
+$$\mathrm{LOD} = -\log \sum_c w_c\, e^{-L_c}.$$
+
+This is dominated by whichever alternative explains the pair best, so a
+candidate who looks like a sib is scored against the sib hypothesis rather than
+against a stranger. That is the `relatedness` argument:
+
+```{r}
+sim <- simulate_population(n = 300, n_loci = 15, n_alleles = 10,
+                           n_offspring = 40, error = 0.01, seed = 7)
+p <- allele_freqs(sim$genotypes)
+ped <- sim$pedigree
+
+naive <- parentage_lod(sim$genotypes, ped$offspring, sim$sires, p, error = 0.01)
+aware <- parentage_lod(sim$genotypes, ped$offspring, sim$sires, p, error = 0.01,
+                       relatedness = c(unrelated = 0.95, avuncular = 0.05))
+
+kt <- paste(ped$offspring, ped$sire)
+c(naive = mean(naive$lod[paste(naive$offspring, naive$candidate) %in% kt]),
+  aware = mean(aware$lod[paste(aware$offspring, aware$candidate) %in% kt]))
+```
+
+True sires score lower, as they should: against a pool that might contain their
+sibs, the evidence that *this* male rather than a brother is the parent is
+genuinely weaker.
+
+Classes are named for the **candidate-to-offspring** relationship, which is one
+step further out than people usually think. A full sib of the true father is the
+offspring's uncle, so the class is `avuncular`, not `full_sib`. See
+`?ibd_mixture`.
+
+```{r}
+ibd_mixture(unrelated = 0.95, avuncular = 0.05)
+```
+
+## What it costs, and what it does not fix
+
+Recall falls. In the hardest cell, 15 microsatellites with ten full sibs and
+half the sires unsampled, the assignment rate at posterior >= 0.95 drops from
+47% to 7%. That is the honest answer: with those markers and that pool you
+cannot separate a sire from ten of his brothers, and the model now says so
+instead of guessing.
+
+That same cell is also the one the fix does not fully repair, reaching 0.907
+observed against 0.963 stated. Everything else recalibrates to within a point or
+two. So treat the correction as substantially reducing the bias, not abolishing
+it, and treat very high relatedness with weak markers as a study-design problem
+rather than an analysis problem.
+
+Two further limits. The correction is not implemented for
+`type = "pair"`. And it needs you to state the pool composition; there is a
+screen to tell you whether it matters,
+
+```{r}
+pool_relatedness(sim$genotypes, ped$offspring[1:4], sim$sires, p,
+                 error = 0.01, nsim = 400)
+```
+
+but it reports a lower bound, not an estimate. In a pool seeded with ten full
+sibs of the sire plus the sire, 5.5% by construction, it returns about 3%,
+because only relatives extreme enough to clear the threshold are counted. Use it
+to decide whether to reach for `relatedness`, and set the weights from how the
+pool was actually collected.
+
+## References
+
+Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998) *Molecular
+Ecology* **7**, 639-655.
+
+Kalinowski, S.T., Taper, M.L. & Marshall, T.C. (2007) *Molecular Ecology*
+**16**, 1099-1106.
+
+Amiri Roudbar, M., Mousavi, S.F., Akbarzadeh, M., Brounts, S.H. & Momen, M.
+(2025) *Ecology and Evolution* **15**(10), e72230.

@@ -17,6 +17,8 @@ parentage_lod(
   mothers = NULL,
   exclude_self = TRUE,
   max_mismatch = NULL,
+  ibd = NULL,
+  relatedness = NULL,
   output = c("long", "matrix")
 )
 
@@ -56,6 +58,20 @@ itself or the known parent.}
 \item{max_mismatch}{If not `NULL`, rows with more than this many mismatching
 loci are dropped from the result. Useful to keep output small when
 screening many candidates.}
+
+\item{ibd}{Identity-by-descent coefficients `c(k0, k1, k2)` describing how a
+*non-parent* candidate is related to the offspring, changing what the LOD
+score is a ratio against. The default `NULL` means unrelated, `c(1, 0, 0)`,
+which is the classical assumption. Use [ibd_mixture()] to build this from
+relationship classes. Not yet supported for `type = "pair"`.}
+
+\item{relatedness}{Named weights describing the relationship classes present
+among *non-parent* candidates, for example
+`c(unrelated = 0.95, avuncular = 0.05)`; see [ibd_mixture()] for the class
+names. The LOD then becomes a ratio against the best-fitting alternative
+rather than against an unrelated stranger, which is what keeps a close
+relative of an unsampled parent from being mistaken for the parent. Mutually
+exclusive with `ibd`. Not yet supported for `type = "pair"`.}
 
 \item{output}{`"long"` returns one row per comparison. `"matrix"` returns
 the offspring-by-candidate matrices directly, which is much cheaper for

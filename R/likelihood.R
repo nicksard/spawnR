@@ -52,6 +52,16 @@
 #' @param p Numeric vector of allele frequencies at the locus.
 #' @param error Genotyping error rate at the locus, in `[0, 1]`.
 #' @param type One of `"one_known"`, `"both_unknown"` or `"pair"`.
+#' @param ibd Identity-by-descent coefficients `c(k0, k1, k2)` for how a
+#'   *non-parent* candidate is related to the offspring, which is what the LOD
+#'   is a ratio against. `NULL` (the default) and `c(1, 0, 0)` both mean
+#'   unrelated, the classical assumption; `c(0, 1, 0)` means the candidate is
+#'   the parent, which makes the LOD identically zero. See [ibd_mixture()]. To
+#'   weigh several relationship classes at once use the `relatedness` argument of
+#'   [parentage_lod()] rather than averaging coefficients here: relatedness holds
+#'   for a whole genome, so the classes must be mixed over multilocus
+#'   likelihoods, not inside a per-locus denominator. Not supported for
+#'   `type = "pair"`.
 #'
 #' @return A numeric vector of per-locus LOD contributions. `NA` where a
 #'   required genotype is missing; `-Inf` at a locus that excludes the candidate
@@ -83,8 +93,19 @@
 #'           error = 0.01, type = "one_known")
 #' @export
 lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
-                      type = c("one_known", "both_unknown", "pair")) {
-  lk <- .locus_lik(o1, o2, c1, c2, p, error, k1, k2, match.arg(type))
+                      type = c("one_known", "both_unknown", "pair"),
+                      ibd = NULL) {
+  type <- match.arg(type)
+  if (!is.null(ibd)) {
+    ibd <- as.numeric(ibd)
+    if (length(ibd) != 3L || any(ibd < 0) || abs(sum(ibd) - 1) > 1e-8) {
+      stop("`ibd` must be three non-negative coefficients summing to one.", call. = FALSE)
+    }
+    if (type == "pair") {
+      stop("`ibd` is not yet supported for type = 'pair'.", call. = FALSE)
+    }
+  }
+  lk <- .locus_lik(o1, o2, c1, c2, p, error, k1, k2, type, ibd)
   .safe_log_ratio(lk$num, lk$den)
 }
 
@@ -92,9 +113,10 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
 # P(g_k) P(g_c) divided out. Both are proper probability distributions over the
 # offspring genotype; `test-likelihood.R` asserts that they sum to one.
 .locus_lik <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
-                       type = "one_known") {
+                       type = "one_known", ibd = NULL) {
   e <- error[1L]
   if (is.na(e) || e < 0 || e > 1) stop("`error` must lie in [0, 1].", call. = FALSE)
+  if (!is.null(ibd) && identical(as.numeric(ibd), c(1, 0, 0))) ibd <- NULL
 
   Po  <- geno_freq(o1, o2, p)
   T_c <- trans_prob(o1, o2, c1, c2, p)
@@ -102,7 +124,11 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
   if (type == "both_unknown") {
     u0 <- (1 - e)^2; u1 <- e * (1 - e); u2 <- e^2
     num <- u0 * T_c + (2 * u1 + u2) * Po
-    den <- Po
+    den <- if (is.null(ibd)) Po else {
+      same <- as.numeric((o1 == c1 & o2 == c2) | (o1 == c2 & o2 == c1))
+      same[is.na(same)] <- NA_real_
+      u0 * (ibd[1] * Po + ibd[2] * T_c + ibd[3] * same) + (2 * u1 + u2) * Po
+    }
   } else {
     if (is.null(k1) || is.null(k2)) {
       stop("`k1` and `k2` are required for type = \'", type, "\'.", call. = FALSE)
@@ -111,7 +137,19 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
     T_k  <- trans_prob(o1, o2, k1, k2, p)
     T_kc <- trans_prob_pair(o1, o2, k1, k2, c1, c2, p)
     num <- w0 * T_kc + w1 * (T_k + T_c + Po) + (3 * w2 + w3) * Po
-    den <- if (type == "pair") Po else w0 * T_k + w1 * (T_k + 2 * Po) + (3 * w2 + w3) * Po
+    if (type == "pair") {
+      den <- Po
+    } else if (is.null(ibd)) {
+      den <- w0 * T_k + w1 * (T_k + 2 * Po) + (3 * w2 + w3) * Po
+    } else {
+      # A non-parent candidate related to the true father shares the paternal
+      # gamete with probability ibd[2]. Linear in ibd, so a mixture over
+      # relationship classes is the mixture-averaged coefficient vector.
+      f <- ibd[2]
+      den <- w0 * (f * T_kc + (1 - f) * T_k) +
+             w1 * (Po + T_k + f * T_c + (1 - f) * Po) +
+             (3 * w2 + w3) * Po
+    }
   }
   list(num = num, den = den)
 }

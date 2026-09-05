@@ -41,7 +41,8 @@
 # V arrays of dimension (n_off, n_loci, G) for the LOD and the mismatch flag.
 # Column G is the untyped-candidate slot and stays zero. The transition
 # probabilities are computed once and used for both quantities.
-.build_V <- function(gi, ocode, kcode, freqs, e, type) {
+.build_V <- function(gi, ocode, kcode, freqs, e, type, ibd = NULL) {
+  if (!is.null(ibd) && identical(as.numeric(ibd), c(1, 0, 0))) ibd <- NULL
   no <- nrow(ocode); nl <- ncol(ocode); G <- gi$G
   Vl <- array(0, c(no, nl, G))
   Vm <- array(0, c(no, nl, G))
@@ -64,12 +65,17 @@
       T_c <- trans_prob(o1, o2, c1, c2, p)
       if (type == "both_unknown") {
         num <- u0 * T_c + (2 * u1 + u2) * Po
-        den <- Po
+        den <- if (is.null(ibd)) Po else
+          u0 * (ibd[1] * Po + ibd[2] * T_c + ibd[3] * as.numeric(o_code == a)) +
+          (2 * u1 + u2) * Po
         bad <- T_c == 0
       } else {
         T_kc <- trans_prob_pair(o1, o2, k1, k2, c1, c2, p)
         num <- w0 * T_kc + w1 * (T_k + T_c + Po) + w23 * Po
-        den <- if (type == "pair") Po else w0 * T_k + w1 * (T_k + 2 * Po) + w23 * Po
+        den <- if (type == "pair") Po
+               else if (is.null(ibd)) w0 * T_k + w1 * (T_k + 2 * Po) + w23 * Po
+               else w0 * (ibd[2] * T_kc + (1 - ibd[2]) * T_k) +
+                    w1 * (Po + T_k + ibd[2] * T_c + (1 - ibd[2]) * Po) + w23 * Po
         bad <- T_kc == 0
       }
       v <- .safe_log_ratio(num, den)
@@ -109,7 +115,7 @@
 
 # Offspring-by-candidate LOD, mismatch and comparability matrices.
 .lod_matrix <- function(gi, off_idx, cand_idx, known_idx, freqs, e, type,
-                        chunk = 4e6) {
+                        chunk = 4e6, ibd = NULL) {
   nl <- ncol(gi$code); G <- gi$G
   nc <- length(cand_idx); no_all <- length(off_idx)
   ccode <- gi$code[cand_idx, , drop = FALSE]
@@ -129,7 +135,7 @@
     ii <- s:min(s + per - 1L, no_all)
     ocode <- gi$code[off_idx[ii], , drop = FALSE]
     kcode <- if (type == "both_unknown") NULL else gi$code[known_idx[ii], , drop = FALSE]
-    V <- .build_V(gi, ocode, kcode, freqs, e, type)
+    V <- .build_V(gi, ocode, kcode, freqs, e, type, ibd)
     out_l[ii, ] <- .accumulate(V$lod,  cc, G, method, length(ii), nl, nc)
     out_m[ii, ] <- .accumulate(V$mism, cc, G, method, length(ii), nl, nc)
   }

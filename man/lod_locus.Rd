@@ -13,7 +13,8 @@ lod_locus(
   error,
   k1 = NULL,
   k2 = NULL,
-  type = c("one_known", "both_unknown", "pair")
+  type = c("one_known", "both_unknown", "pair"),
+  ibd = NULL
 )
 }
 \arguments{
@@ -31,6 +32,17 @@ or of the candidate mother (`type = "pair"`). Ignored when
 `type = "both_unknown"`.}
 
 \item{type}{One of `"one_known"`, `"both_unknown"` or `"pair"`.}
+
+\item{ibd}{Identity-by-descent coefficients `c(k0, k1, k2)` for how a
+*non-parent* candidate is related to the offspring, which is what the LOD
+is a ratio against. `NULL` (the default) and `c(1, 0, 0)` both mean
+unrelated, the classical assumption; `c(0, 1, 0)` means the candidate is
+the parent, which makes the LOD identically zero. See [ibd_mixture()]. To
+weigh several relationship classes at once use the `relatedness` argument of
+[parentage_lod()] rather than averaging coefficients here: relatedness holds
+for a whole genome, so the classes must be mixed over multilocus
+likelihoods, not inside a per-locus denominator. Not supported for
+`type = "pair"`.}
 }
 \value{
 A numeric vector of per-locus LOD contributions. `NA` where a

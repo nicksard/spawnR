@@ -1,3 +1,29 @@
+# spawnR 0.4.0
+
+Handles relatives in the candidate pool, the last known way the posterior could
+be confidently wrong.
+
+* New `relatedness` argument to `parentage_lod()`: the alternative hypothesis
+  becomes a mixture over relationship classes rather than "unrelated stranger".
+  Classes are mixed over *multilocus* likelihoods, `LOD = -log(sum_c w_c
+  exp(-L_c))`, because a candidate either is or is not a sib for its whole
+  genome. Mixing inside the per-locus denominator instead - the obvious
+  approach, and exact algebra - shifts parents and their sibs almost equally and
+  recovers almost none of the lost calibration. Both are measured in the new
+  vignette.
+* `ibd_mixture()` builds the coefficients from named relationship classes.
+* `lod_locus()` and `parentage_lod()` gain a low-level `ibd` argument for a
+  single relationship class.
+* `pool_relatedness()` screens a pool for excess allele sharing, reported as a
+  lower bound rather than an estimate.
+* `vignette("relatedness")` shows that the failure needs two conditions at once,
+  relatives present *and* the true parent unsampled: either alone is harmless,
+  together they take a stated 0.993 down to 0.838 observed. The multilocus
+  mixture restores calibration to within a point or two everywhere except the
+  hardest cell, where it improves 0.838 to 0.907 and cuts the assignment rate to
+  match what the markers can actually support.
+* Not implemented for `type = "pair"`.
+
 # spawnR 0.3.0
 
 Adds a posterior criterion, which resolves the trade-off between the two

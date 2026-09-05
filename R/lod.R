@@ -38,6 +38,18 @@
 #' @param max_mismatch If not `NULL`, rows with more than this many mismatching
 #'   loci are dropped from the result. Useful to keep output small when
 #'   screening many candidates.
+#' @param ibd Identity-by-descent coefficients `c(k0, k1, k2)` describing how a
+#'   *non-parent* candidate is related to the offspring, changing what the LOD
+#'   score is a ratio against. The default `NULL` means unrelated, `c(1, 0, 0)`,
+#'   which is the classical assumption. Use [ibd_mixture()] to build this from
+#'   relationship classes. Not yet supported for `type = "pair"`.
+#' @param relatedness Named weights describing the relationship classes present
+#'   among *non-parent* candidates, for example
+#'   `c(unrelated = 0.95, avuncular = 0.05)`; see [ibd_mixture()] for the class
+#'   names. The LOD then becomes a ratio against the best-fitting alternative
+#'   rather than against an unrelated stranger, which is what keeps a close
+#'   relative of an unsampled parent from being mistaken for the parent. Mutually
+#'   exclusive with `ibd`. Not yet supported for `type = "pair"`.
 #' @param output `"long"` returns one row per comparison. `"matrix"` returns
 #'   the offspring-by-candidate matrices directly, which is much cheaper for
 #'   large candidate sets: a thousand offspring against several thousand
@@ -81,11 +93,28 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
                           known = NULL,
                           type = c("both_unknown", "one_known", "pair"),
                           mothers = NULL, exclude_self = TRUE,
-                          max_mismatch = NULL,
+                          max_mismatch = NULL, ibd = NULL, relatedness = NULL,
                           output = c("long", "matrix")) {
   stopifnot(inherits(g, "genotypes"))
   type <- match.arg(type)
   output <- match.arg(output)
+  if (!is.null(relatedness)) {
+    if (!is.null(ibd)) stop("Give either `ibd` or `relatedness`, not both.", call. = FALSE)
+    if (type == "pair") stop("`relatedness` is not yet supported for type = 'pair'.", call. = FALSE)
+    rw <- relatedness / sum(relatedness)
+    if (any(rw < 0) || is.null(names(rw))) {
+      stop("`relatedness` must be a named vector of non-negative class weights; ",
+           "see ?ibd_mixture for the class names.", call. = FALSE)
+    }
+  }
+  if (!is.null(ibd)) {
+    ibd <- as.numeric(ibd)
+    if (length(ibd) != 3L || any(ibd < 0) || abs(sum(ibd) - 1) > 1e-8) {
+      stop("`ibd` must be three non-negative coefficients summing to one; ",
+           "see ?ibd_mixture.", call. = FALSE)
+    }
+    if (type == "pair") stop("`ibd` is not yet supported for type = 'pair'.", call. = FALSE)
+  }
   .check_freqs(freqs, g)
   nl <- n_loci(g)
   e <- .expand_error(error, nl)
@@ -130,6 +159,7 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
   oi <- match(off, g$ids)
   ci <- match(cand, g$ids)
 
+  MIS <- NULL; NCM <- NULL
   if (type == "pair") {
     c2i <- match(cand2, g$ids)
     LOD <- MIS <- NCM <- matrix(0, no, nc)
@@ -140,8 +170,31 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
     }
   } else {
     ki <- if (type == "one_known") match(kn, g$ids) else NULL
-    M <- .lod_matrix(gi, oi, ci, ki, freqs, e, type)
-    LOD <- M$lod; MIS <- M$mism; NCM <- M$ncmp
+    if (is.null(relatedness)) {
+      M <- .lod_matrix(gi, oi, ci, ki, freqs, e, type, ibd = ibd)
+      LOD <- M$lod; MIS <- M$mism; NCM <- M$ncmp
+    } else {
+      # Relatedness is a property of the whole genome, not an independent draw
+      # at every locus, so the classes must be mixed over multilocus
+      # likelihoods, not inside the per-locus denominator. Writing L_c for the
+      # LOD against class c alone,
+      #     LOD = -log( sum_c w_c exp(-L_c) ),
+      # which is dominated by whichever alternative explains the pair best.
+      # Mixing per locus instead shifts every candidate almost equally and
+      # leaves true parents and their relatives just as hard to tell apart.
+      acc <- NULL
+      for (cl in names(rw)) {
+        Mc <- .lod_matrix(gi, oi, ci, ki, freqs, e, type,
+                          ibd = ibd_mixture(structure(1, names = cl)))
+        term <- log(rw[[cl]]) - Mc$lod
+        acc <- if (is.null(acc)) term else {
+          mx <- pmax(acc, term)
+          mx + log(exp(acc - mx) + exp(term - mx))
+        }
+        if (is.null(MIS)) { MIS <- Mc$mism; NCM <- Mc$ncmp }
+      }
+      LOD <- -acc
+    }
   }
 
   if (output == "matrix") {
