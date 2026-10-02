@@ -44,7 +44,7 @@
 #' n_ind(g)
 #' n_loci(g)
 #' @export
-genotypes <- function(x, id_col = 1, loci = NULL, missing = c("", "0", "000", "NA")) {
+genotypes <- function(x, id_col = 1, loci = NULL, missing = c("", "0", "000", "NA", "*", "-9")) {
   if (is.matrix(x)) x <- as.data.frame(x, stringsAsFactors = FALSE)
   if (!is.data.frame(x)) stop("`x` must be a data.frame or a matrix.", call. = FALSE)
   if (nrow(x) < 1L) stop("`x` must have at least one row.", call. = FALSE)

@@ -8,7 +8,12 @@
 \alias{print.genotypes}
 \title{Genotype containers for parentage analysis}
 \usage{
-genotypes(x, id_col = 1, loci = NULL, missing = c("", "0", "000", "NA"))
+genotypes(
+  x,
+  id_col = 1,
+  loci = NULL,
+  missing = c("", "0", "000", "NA", "*", "-9")
+)
 
 n_ind(x)
 

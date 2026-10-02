@@ -1,3 +1,29 @@
+# spawnR 0.6.0
+
+External validation against the published literature and against CERVUS itself.
+
+* Reproduces the headline simulation result of Kalinowski et al. (2007). From
+  their stated parameters alone - an 11-allele frequency spectrum, six loci, 100
+  candidate males, 1% error, Delta 0.99 - this package assigns **72.1%** of
+  offspring against their reported **73%**, with precision at exactly 99.0%. The
+  re-derived error coefficients therefore recover what CERVUS implements, which
+  is what the paper's corrigendum says the printed equations failed to convey.
+  Script in `inst/studies/06-kalinowski-replication.R`.
+* `read_cervus_results()` reads a CERVUS parentage export. Columns are detected
+  by pattern and the mapping is printed, since CERVUS's header text varies by
+  analysis type and version and no authoritative list is published.
+* `compare_cervus()` joins this package's scores to CERVUS's and reports matched
+  rows, correlation, mean and maximum absolute difference, rows over tolerance,
+  and whether the mismatch and loci-compared counts agree.
+* `vignette("validation")` documents both, including the four inputs that must
+  match before a difference means anything, how to read a disagreement, and what
+  is expected *not* to match.
+* `genotypes()` now also treats `*` and `-9` as missing allele codes.
+* Honest gap: the 51% figure Kalinowski et al. report for Marshall et al.'s
+  *original* equations is not reproduced. That needs the 1998 error formula as
+  printed, which is closed-access and could not be obtained; only its defect is
+  documented, not its form. Guessing at it would not be a replication.
+
 # spawnR 0.5.0
 
 Extends the relatedness-aware alternative to the joint parent-pair

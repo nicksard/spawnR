@@ -1,0 +1,158 @@
+---
+title: "Replication and external validation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Replication and external validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(spawnR)
+```
+
+This package was written clean-room, from published equations and prose, without
+reading any existing implementation. That buys independence but costs the usual
+reassurance, and it raises a specific worry: the genotyping-error coefficients
+here were **re-derived** rather than transcribed, because the ones printed in the
+sources do not sum to one and so cannot be a probability decomposition.
+
+There is a reason to think the re-derivation is recoverable rather than
+invented. The corrigendum to Kalinowski et al. (2007) states that the typesetting
+errors in that paper's appendix "do not affect any version of the Cervus
+software." CERVUS therefore implements the intended equations, and the printed
+ones were damaged on the way to the page. Two consequences follow, and both are
+testable.
+
+## A published number, reproduced
+
+Kalinowski et al. (2007) state their simulation parameters exactly, which makes
+their headline result a falsifiable target:
+
+> "We assumed that allele frequencies in the population were [0.25, 0.25, 0.2,
+> 0.15, 0.05, 0.05, 0.02, 0.01, 0.01, 0.005, 0.005]." Each iteration "began by
+> randomly selecting actual genotypes for 100 unrelated adult males and 100
+> unrelated adult females", with "a genotyping error rate of 0.01", over "one
+> hundred thousand simulations".
+
+and report that with six loci, at a Δ 0.99 confidence level, "the corresponding
+result for the corrected equations was 73%".
+
+Running that specification through this package, with nothing taken from CERVUS:
+
+```{r, echo = FALSE}
+k <- read.csv(text = "
+loci,crit99,assigned,precision
+4,4.438,25.3,99.0
+5,4.260,46.3,99.0
+6,3.440,72.1,99.0
+7,1.380,89.4,99.0
+8,0.694,96.4,99.0")
+knitr::kable(k, col.names = c("loci", "critical Delta (99%)", "assigned %",
+                              "precision %"),
+             caption = "40,000 simulations per row. Kalinowski et al. report 73% for six loci.")
+```
+
+**72.1% against a reported 73%.** The row is not fitted to anything; the allele
+spectrum, locus count, candidate count and error rate all come from the paper,
+and the equations come from the re-derivation. Precision sits at exactly 99.0%
+at every locus count, which is the Δ 0.99 criterion doing what it claims.
+
+The script is at
+`system.file("studies", "06-kalinowski-replication.R", package = "spawnR")`.
+
+### What cannot be reproduced
+
+The same passage reports **51%** for Marshall et al.'s *original* equations, and
+that figure is out of reach here. Reproducing it needs Marshall's original error
+formula as printed, and that equation could not be obtained: the 1998 paper is
+closed-access with no open copy, and the only description available is
+Kalinowski's characterisation of the mistake, that Marshall "mistakenly indicated
+that the probability of making a genotyping error and observing g is equal to ε,
+instead of εP(g)". That is enough to know what went wrong and not enough to
+reconstruct the printed expression, which does not factor the way the corrected
+one does. Rather than guess at it and present the guess as a replication, this
+package implements only the corrected form.
+
+## Comparing directly against CERVUS
+
+The stronger test is running both programs on the same genotypes and diffing the
+LOD scores pair by pair. CERVUS is Windows software, so this is something you run
+rather than something the package can do for you, but the import and comparison
+are provided.
+
+```r
+# 1. In CERVUS: run your analysis and export the parentage results to CSV.
+# 2. In R, read the same genotypes and the same allele frequencies.
+g <- genotypes(read.csv("genotypes.csv"), id_col = "id")
+p <- allele_freqs(g, min_freq = 0)          # see "getting the inputs to match"
+
+mine <- parentage_lod(g, offspring, candidates, p, error = 0.01,
+                      type = "both_unknown")     # pair LOD
+theirs <- read_cervus_results("cervus_parentage.csv", which = "pair")
+
+compare_cervus(mine, theirs)
+```
+
+`read_cervus_results()` detects columns by pattern rather than assuming a layout,
+because CERVUS's header text varies by analysis type and version and no
+authoritative list is published. It prints the mapping it used, so check that
+against your file instead of trusting it.
+
+`compare_cervus()` reports how many rows matched, the correlation, the mean and
+maximum absolute difference, how many rows exceed a tolerance, and whether the
+mismatch and loci-compared counts agree. Agreement on those integer counts is
+worth as much as the LOD correlation: it confirms both programs are reading the
+same genotypes the same way, which is the usual cause of a confusing diff.
+
+### Getting the inputs to match
+
+Four things have to line up before a difference means anything.
+
+**Allele frequencies.** `allele_freqs()` floors every frequency at `1/(2n)` by
+default, the frequency of one unobserved allele copy, which keeps the likelihood
+finite when a candidate carries an allele never seen in the reference sample.
+CERVUS does not do this. Pass `min_freq = 0` to match, and check CERVUS's own
+minimum allele frequency setting.
+
+**One error rate.** CERVUS assumes a single rate across loci, so pass a scalar
+`error`, not the per-locus vector from [estimate_error_rates()].
+
+**The same configuration.** A CERVUS *pair* LOD corresponds to
+`type = "both_unknown"`; a *trio* LOD, with the other parent supplied,
+corresponds to `type = "one_known"`. Comparing a trio against a pair produces a
+large, meaningless difference.
+
+**No relatedness correction.** Leave `relatedness` and `ibd` unset. CERVUS's
+alternative hypothesis is an unrelated candidate; a relatedness-aware score is
+deliberately a ratio against something else and is not expected to match.
+
+### Reading a disagreement
+
+A correlation near 1 with a small constant offset usually means the allele
+frequencies differ slightly, often the `min_freq` flooring above. Scattered
+large differences on specific pairs usually mean missing data is being read
+differently, which the loci-compared column will show. Differences that scale
+with the number of mismatching loci point at the error model itself, which is the
+case worth telling me about.
+
+Two things will *not* match and are not errors. Confidence thresholds from
+[delta_critical()] come from this package's own simulation with its own random
+draws, so they differ from CERVUS's run to run even when the method agrees. And
+anything from [parentage_posterior()] has no CERVUS counterpart at all.
+
+## References
+
+Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998) Statistical
+confidence for likelihood-based paternity inference in natural populations.
+*Molecular Ecology* **7**, 639-655.
+
+Kalinowski, S.T., Taper, M.L. & Marshall, T.C. (2007) Revising how the computer
+program CERVUS accommodates genotyping error increases success in paternity
+assignment. *Molecular Ecology* **16**, 1099-1106. Corrigendum: *Molecular
+Ecology* **19**, 1512.
+
+Amiri Roudbar, M., Mousavi, S.F., Akbarzadeh, M., Brounts, S.H. & Momen, M.
+(2025) Pairwise paternity assignment with forward-backward simulations.
+*Ecology and Evolution* **15**(10), e72230.

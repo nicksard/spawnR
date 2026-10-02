@@ -482,4 +482,57 @@ ok(mean(pp4$lod[k4p %in% ktp]) < mean(pp1$lod[k1p %in% ktp]),
    "a relative alternative shrinks true parent-pair LOD scores")
 
 
+## ------------------------------------------------------- CERVUS interop
+simc <- simulate_population(n = 80, n_loci = 10, n_alleles = 6,
+                            n_offspring = 12, error = 0.01, prop_missing = 0.05,
+                            seed = 2007)
+gc_ <- simc$genotypes; pc <- allele_freqs(gc_, min_freq = 0)
+minec <- parentage_lod(gc_, simc$pedigree$offspring, simc$sires, pc, 0.01)
+
+tf <- tempfile(fileext = ".csv")
+utils::write.csv(data.frame(
+  "Offspring ID" = minec$offspring, "Candidate father ID" = minec$candidate,
+  "Pair loci compared" = minec$n_compared, "Pair loci mismatching" = minec$mismatches,
+  "Pair LOD score" = minec$lod, "Pair confidence" = "*",
+  check.names = FALSE), tf, row.names = FALSE)
+cv <- suppressMessages(read_cervus_results(tf))
+ok(all(c("offspring", "candidate", "n_compared", "mismatches", "lod") %in% names(cv)),
+   "read_cervus_results maps CERVUS-style headers")
+ok(nrow(cv) == nrow(minec), "read_cervus_results keeps every row")
+ok(identical(unname(attr(cv, "mapping")["lod"]), "Pair LOD score"),
+   "the detected mapping is reported")
+
+cmp <- compare_cervus(minec, cv)
+ok(inherits(cmp, "cervus_comparison"), "compare_cervus returns its own class")
+ok(cmp$summary$n_matched == nrow(minec), "every pair is matched on offspring and candidate")
+ok(cmp$summary$max_abs_diff < 1e-9, "identical input compares as identical")
+ok(nrow(cmp$worst) == 0L, "nothing is flagged when the scores agree")
+ok(isTRUE(all.equal(cmp$summary$mismatch_agreement, 1)),
+   "mismatch counts are compared")
+
+cv2 <- cv; cv2$lod[1:3] <- cv2$lod[1:3] + c(0.5, -1.2, 0.001)
+cmp2 <- compare_cervus(minec, cv2, tol = 0.01)
+ok(cmp2$summary$n_over_tol == 2L, "compare_cervus flags differences above tolerance")
+ok(abs(cmp2$summary$max_abs_diff - 1.2) < 1e-9, "the largest difference is reported")
+ok(cmp2$worst$offspring[1] == minec$offspring[2] ||
+   abs(cmp2$worst$diff[1]) > 1, "worst disagreements are sorted first")
+
+ok(inherits(try(read_cervus_results(tempfile()), silent = TRUE), "try-error"),
+   "a missing CERVUS file errors")
+tf2 <- tempfile(fileext = ".csv")
+utils::write.csv(data.frame(a = 1, b = 2), tf2, row.names = FALSE)
+ok(inherits(try(suppressMessages(read_cervus_results(tf2)), silent = TRUE), "try-error"),
+   "a file without recognisable columns errors informatively")
+ok(inherits(try(compare_cervus(minec, data.frame(x = 1)), silent = TRUE), "try-error"),
+   "compare_cervus checks its inputs")
+
+# "*" and "-9" are common missing-data codes in CERVUS-style files
+raw2 <- data.frame(id = c("a", "b"), L1a = c("101", "*"), L1b = c("103", "*"),
+                   L2a = c("-9", "201"), L2b = c("-9", "203"),
+                   stringsAsFactors = FALSE)
+g2 <- genotypes(raw2, id_col = "id")
+ok(is.na(g2$a1[2, 1]) && is.na(g2$a1[1, 2]),
+   "'*' and '-9' are read as missing genotypes")
+
+
 cat("\nAll tests passed.\n")
