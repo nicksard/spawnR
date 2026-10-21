@@ -30,6 +30,16 @@ Fixes a calibration bug in the Delta criterion.
   level is not reached. A `FALSE` means "any assignment with a positive-LOD
   contender passes", not that a threshold was found. The column is carried
   into the `criteria` attribute of `assign_trios()` and `assign_parentage()`.
+* `allele_freqs()`: the default `min_freq` is now `min(1/(2n), 0.01)` rather
+  than `1/(2n)`, for n typed individuals at a locus. With small reference sets
+  the old floor was large: with six reference parents every allele was floored
+  at about 0.083, so an allele never seen in the reference counted as common as
+  one seen once. That distorted LOD scores and the Delta simulation, which
+  draws genotypes from these frequencies. Results change only where fewer than
+  50 individuals are typed at a locus; pass `min_freq = 1 / (2 * n)` to
+  reproduce 0.7.0. A message now flags loci with fewer than 25 typed reference
+  individuals, since frequencies from so few allele copies are noisy whatever
+  the floor; an explicit `min_freq` silences it.
 * Unit tests now use testthat (`tests/testthat/`), alongside the existing
   `tests/test-spawnR.R` script. testthat is added to Suggests.
 

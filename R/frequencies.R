@@ -17,9 +17,17 @@
 #'   character vector of identifiers, or integer/logical positions. Defaults to
 #'   all individuals.
 #' @param min_freq Lower bound applied to every estimated frequency before
-#'   renormalisation. The default, `1 / (2 * n)` with `n` the number of typed
-#'   individuals at the locus, is the frequency of a single unobserved allele
-#'   copy. Set to `0` for unmodified counting.
+#'   renormalisation. The default is `min(1 / (2 * n), 0.01)` with `n` the
+#'   number of typed individuals at the locus: the frequency of a single
+#'   unobserved allele copy, capped at 1%. The cap matters for small reference
+#'   sets. Uncapped, six typed parents would floor every allele at 1/12, about
+#'   0.083, so an allele never seen in the reference would count as common as
+#'   one seen once, which distorts LOD scores and the Delta simulation, since
+#'   [sim_delta()] draws genotypes from these frequencies. A message is shown
+#'   when fewer than 25 individuals are typed at a locus, because frequencies
+#'   from so few allele copies are noisy whatever the floor; supply `min_freq`
+#'   explicitly to choose the floor and silence it. Set to `0` for unmodified
+#'   counting.
 #'
 #' @return An object of class `"allele_freqs"`: a list of numeric vectors, one
 #'   per locus, each summing to one and named by allele label.
@@ -45,6 +53,7 @@ allele_freqs <- function(g, reference = NULL, min_freq = NULL) {
   gg <- if (is.null(reference)) g else subset_ind(g, reference)
   out <- vector("list", n_loci(g))
   names(out) <- g$loci
+  inv2n <- rep(NA_real_, n_loci(g))
   for (l in seq_len(n_loci(g))) {
     lab <- g$alleles[[l]]
     k <- length(lab)
@@ -52,13 +61,24 @@ allele_freqs <- function(g, reference = NULL, min_freq = NULL) {
     cnt <- tabulate(c(gg$a1[, l], gg$a2[, l]), nbins = k)
     ntyped <- sum(!is.na(gg$a1[, l]))
     mf <- if (is.null(min_freq)) {
-      if (ntyped > 0L) 1 / (2 * ntyped) else 1 / (2 * k)
+      if (ntyped > 0L) min(1 / (2 * ntyped), 0.01) else 1 / (2 * k)
     } else min_freq
+    inv2n[l] <- if (ntyped > 0L) 1 / (2 * ntyped) else Inf
     p <- if (sum(cnt) > 0) cnt / sum(cnt) else rep(1 / k, k)
     p <- pmax(p, mf)
     p <- p / sum(p)
     names(p) <- lab
     out[[l]] <- p
+  }
+  if (is.null(min_freq) && any(inv2n > 0.02)) {
+    big <- inv2n > 0.02
+    nmin <- if (is.finite(max(inv2n))) round(1 / (2 * max(inv2n))) else 0L
+    message("allele_freqs(): ", sum(big), " of ", length(inv2n), " loci have ",
+            "fewer than 25 typed individuals in the reference set (as few as ",
+            nmin, "). Frequencies from so few allele copies are noisy, which ",
+            "affects LOD scores and the Delta simulation; unobserved alleles are ",
+            "floored at 0.01. Consider a larger reference set or external ",
+            "frequencies, or set `min_freq` explicitly to silence this.")
   }
   structure(out, class = c("allele_freqs", "list"))
 }
