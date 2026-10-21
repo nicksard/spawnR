@@ -33,7 +33,8 @@ Two ways to attach confidence:
   `lod_critical()` takes the lower-tail quantile.
 * **Population-level** (Marshall et al. 1998) — `sim_delta()` and
   `delta_critical()` reproduce the Delta criterion that CERVUS reports, at the
-  conventional relaxed (80%) and strict (95%) levels.
+  conventional relaxed (80%) and strict (95%) levels, for single parents and
+  (`type = "pair"`) for mother-father pairs.
 
 Per-locus genotyping error rates can be estimated from known parent–offspring
 pairs with `estimate_error_rates()`.
@@ -63,6 +64,26 @@ delta_stat(tab)
 # assignment with trio-specific criteria
 assign_parentage(g, offs, males, p, error = er$error,
                  criterion = "pairwise", nsim = 10000)
+```
+
+### Mothers, fathers and trios together
+
+When candidate mothers and fathers are sampled separately, `assign_trios()`
+gives one row per offspring: the best mother, the best father and the best
+mother-father pair (scored jointly), each with LOD, Delta, the Delta confidence
+attained, a significance flag, and the number of loci at which that parent is
+excluded outright.
+
+```r
+a <- assign_trios(g, offspring = offs, mothers = females, fathers = males,
+                  freqs = p, error = er$error,
+                  prop_sampled_mothers = 0.8, prop_sampled_fathers = 0.6)
+a            # best mother / father / trio per offspring
+summary(a)   # counts by confidence level, critical Delta values
+
+# every candidate pair for every offspring, ranked
+assign_trios(g, offs, females, males, p, er$error, output = "all",
+             max_mismatch = 3)
 ```
 
 `simulate_population()` generates a population with a known pedigree for
