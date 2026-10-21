@@ -19,9 +19,15 @@ simulation from producing an unstable criterion.}
 }
 \value{
 A `data.frame` with columns `confidence`, `critical_delta`,
-  `n_above` and `prop_correct`. `critical_delta` is `NA` when no threshold
-  attains the level, which happens when too few of the true parents were
-  sampled or the markers are too weak.
+  `n_above`, `prop_correct` and `resolved`. `critical_delta` is `NA` when no
+  threshold attains the level, which happens when too few of the true parents
+  were sampled or the markers are too weak. It is `0` when every simulated
+  assignment with a Delta, taken together, attains the level; `n_above` is
+  then the number of such assignments and `prop_correct` their proportion
+  correct. `resolved` is `TRUE` when the critical value is a positive
+  threshold located within the simulated Deltas, `FALSE` when it was set to
+  0 because the whole simulation already attains the level, and `NA` when the
+  level is not attained.
 }
 \description{
 Applies the definition of confidence used by Marshall et al. (1998): the
@@ -30,6 +36,17 @@ with Delta at or above that threshold in which the top candidate really is the
 true parent. The critical value at a given confidence level is therefore the
 most permissive threshold that still attains it. The conventional relaxed and
 strict levels of 80% and 95% are the defaults.
+}
+\details{
+When the simulated assignments taken all together already attain a level,
+no threshold is needed and the critical value is 0, as CERVUS reports. This
+is the usual outcome with a powerful marker panel: every simulated
+assignment is correct, so the simulation locates no Delta below which
+assignments become unreliable. Such a 0 is flagged `resolved = FALSE` to
+distinguish "any assignment with a positive-LOD contender passes" from a
+threshold the simulation actually located. Increasing `nsim`, or adding
+realism to the simulation (lower `prop_sampled`, related candidates), is the
+way to probe whether a threshold exists below the simulated range.
 }
 \examples{
 sim <- simulate_population(n = 30, n_loci = 8, n_alleles = 6, seed = 5)

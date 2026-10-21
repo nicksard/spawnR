@@ -17,9 +17,17 @@ character vector of identifiers, or integer/logical positions. Defaults to
 all individuals.}
 
 \item{min_freq}{Lower bound applied to every estimated frequency before
-renormalisation. The default, `1 / (2 * n)` with `n` the number of typed
-individuals at the locus, is the frequency of a single unobserved allele
-copy. Set to `0` for unmodified counting.}
+renormalisation. The default is `min(1 / (2 * n), 0.01)` with `n` the
+number of typed individuals at the locus: the frequency of a single
+unobserved allele copy, capped at 1%. The cap matters for small reference
+sets. Uncapped, six typed parents would floor every allele at 1/12, about
+0.083, so an allele never seen in the reference would count as common as
+one seen once, which distorts LOD scores and the Delta simulation, since
+[sim_delta()] draws genotypes from these frequencies. A message is shown
+when fewer than 25 individuals are typed at a locus, because frequencies
+from so few allele copies are noisy whatever the floor; supply `min_freq`
+explicitly to choose the floor and silence it. Set to `0` for unmodified
+counting.}
 
 \item{x}{An `"allele_freqs"` object.}
 
