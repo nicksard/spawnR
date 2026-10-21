@@ -17,6 +17,7 @@ parentage_lod(
   mothers = NULL,
   exclude_self = TRUE,
   max_mismatch = NULL,
+  min_loci = NULL,
   ibd = NULL,
   relatedness = NULL,
   output = c("long", "matrix")
@@ -58,6 +59,12 @@ itself or the known parent.}
 \item{max_mismatch}{If not `NULL`, rows with more than this many mismatching
 loci are dropped from the result. Useful to keep output small when
 screening many candidates.}
+
+\item{min_loci}{If not `NULL`, rows compared at fewer than this many loci
+are dropped from the result. A comparison resting on a handful of loci has
+a LOD that says little, and an offspring typed at too few loci then
+receives no candidates at all. Like `max_mismatch`, applies to
+`output = "long"` only.}
 
 \item{ibd}{Identity-by-descent coefficients `c(k0, k1, k2)` describing how a
 *non-parent* candidate is related to the offspring, changing what the LOD

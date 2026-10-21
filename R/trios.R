@@ -50,13 +50,20 @@
 #'   significance simulation and matter: confidence is lower when the true
 #'   parent may be missing.
 #' @param prop_typed Proportion of genotypes scored, for the simulation.
-#'   Defaults to the observed proportion.
+#'   Defaults to the observed proportion among the offspring, mothers and
+#'   fathers analysed.
 #' @param nsim Replicates for each single-parent simulation.
 #' @param nsim_trio Replicates for the trio simulation, whose cost grows with
 #'   the number of mothers times the number of fathers.
 #' @param max_mismatch If not `NULL`, candidates (and, for the trio, pairs)
 #'   mismatching at more than this many loci are excluded before the best is
-#'   chosen and Delta computed.
+#'   chosen and Delta computed. The same screen is applied inside the
+#'   significance simulations.
+#' @param min_loci If not `NULL`, a candidate (or pair) compared with the
+#'   offspring at fewer than this many loci is excluded, so an offspring typed
+#'   at too few loci is left unassigned. Also applied inside the significance
+#'   simulations. CERVUS applies a rule of this kind; a common choice is half
+#'   the loci.
 #' @param output `"best"` for one row per offspring, or `"all"` for every
 #'   mother-by-father combination of every offspring, ranked.
 #'
@@ -104,7 +111,8 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
                          confidence = c(0.80, 0.95),
                          prop_sampled_mothers = 1, prop_sampled_fathers = 1,
                          prop_typed = NULL, nsim = 10000L, nsim_trio = 2000L,
-                         max_mismatch = NULL, output = c("best", "all")) {
+                         max_mismatch = NULL, min_loci = NULL,
+                         output = c("best", "all")) {
   stopifnot(inherits(g, "genotypes"))
   output <- match.arg(output)
   confidence <- sort(confidence)
@@ -124,28 +132,32 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
                      output = "matrix")
   pm <- rep(mom, each = nf); pf <- rep(dad, times = nm)
 
-  mask <- function(L, mis, self) {
+  mask <- function(L, mis, ncmp, self) {
     L[self] <- NA_real_
     if (!is.null(max_mismatch)) L[mis > max_mismatch] <- NA_real_
+    if (!is.null(min_loci)) L[ncmp < min_loci] <- NA_real_
     L
   }
-  Lm <- mask(mo$lod, mo$mismatches, outer(off, mom, `==`))
-  Lf <- mask(fa$lod, fa$mismatches, outer(off, dad, `==`))
-  Lp <- mask(pr$lod, pr$mismatches,
+  Lm <- mask(mo$lod, mo$mismatches, mo$n_compared, outer(off, mom, `==`))
+  Lf <- mask(fa$lod, fa$mismatches, fa$n_compared, outer(off, dad, `==`))
+  Lp <- mask(pr$lod, pr$mismatches, pr$n_compared,
              outer(off, pm, `==`) | outer(off, pf, `==`) |
                matrix(pm == pf, length(off), nf * nm, byrow = TRUE))
 
   # Significance: one population-level simulation per analysis.
-  if (is.null(prop_typed)) prop_typed <- mean(!is.na(g$a1))
+  if (is.null(prop_typed)) prop_typed <- .prop_typed(g, c(off, mom, dad))
   sims <- list(
     mother = sim_delta(freqs, error, n_candidates = nm, prop_sampled = prop_sampled_mothers,
-                       prop_typed = prop_typed, nsim = nsim),
+                       prop_typed = prop_typed, nsim = nsim,
+                       max_mismatch = max_mismatch, min_loci = min_loci),
     father = sim_delta(freqs, error, n_candidates = nf, prop_sampled = prop_sampled_fathers,
-                       prop_typed = prop_typed, nsim = nsim),
+                       prop_typed = prop_typed, nsim = nsim,
+                       max_mismatch = max_mismatch, min_loci = min_loci),
     trio = sim_delta(freqs, error, n_candidates = nf, n_candidates2 = nm,
                      prop_sampled = prop_sampled_fathers,
                      prop_sampled2 = prop_sampled_mothers,
-                     prop_typed = prop_typed, nsim = nsim_trio, type = "pair"))
+                     prop_typed = prop_typed, nsim = nsim_trio, type = "pair",
+                     max_mismatch = max_mismatch, min_loci = min_loci))
   crit <- lapply(sims, delta_critical, levels = confidence)
   criteria <- do.call(rbind, lapply(names(crit), function(nm_)
     cbind(analysis = nm_, crit[[nm_]], stringsAsFactors = FALSE)))

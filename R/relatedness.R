@@ -138,7 +138,7 @@ pool_relatedness <- function(g, offspring, candidates, freqs, error,
     Phwe <- geno_freq(tb$gi, tb$gj, p)
     vals <- lod_locus(o1, o2, tb$gi, tb$gj, p = p, error = e[l],
                       type = "both_unknown")
-    vals[!is.finite(vals)] <- 0
+    vals <- .lod_for_sum(vals)
     m <- m + 1L
     parts[[m]] <- list(vals = vals, probs = Phwe)
   }

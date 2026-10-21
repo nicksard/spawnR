@@ -150,7 +150,7 @@ lod_null <- function(g, offspring = NULL, candidate = NULL, freqs, error,
     lod_locus(a1, a2, fixed$c1, fixed$c2, p = p, error = e,
               k1 = fixed$k1, k2 = fixed$k2, type = type)
   }
-  vals[!is.finite(vals)] <- 0
+  vals <- .lod_for_sum(vals)
   list(vals = c(vals, 0), probs = c(prop_typed * Pobs, 1 - prop_typed))
 }
 

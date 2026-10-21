@@ -20,6 +20,7 @@ assign_trios(
   nsim = 10000L,
   nsim_trio = 2000L,
   max_mismatch = NULL,
+  min_loci = NULL,
   output = c("best", "all")
 )
 
@@ -49,7 +50,8 @@ significance simulation and matter: confidence is lower when the true
 parent may be missing.}
 
 \item{prop_typed}{Proportion of genotypes scored, for the simulation.
-Defaults to the observed proportion.}
+Defaults to the observed proportion among the offspring, mothers and
+fathers analysed.}
 
 \item{nsim}{Replicates for each single-parent simulation.}
 
@@ -58,7 +60,14 @@ the number of mothers times the number of fathers.}
 
 \item{max_mismatch}{If not `NULL`, candidates (and, for the trio, pairs)
 mismatching at more than this many loci are excluded before the best is
-chosen and Delta computed.}
+chosen and Delta computed. The same screen is applied inside the
+significance simulations.}
+
+\item{min_loci}{If not `NULL`, a candidate (or pair) compared with the
+offspring at fewer than this many loci is excluded, so an offspring typed
+at too few loci is left unassigned. Also applied inside the significance
+simulations. CERVUS applies a rule of this kind; a common choice is half
+the loci.}
 
 \item{output}{`"best"` for one row per offspring, or `"all"` for every
 mother-by-father combination of every offspring, ranked.}

@@ -15,7 +15,9 @@ sim_delta(
   type = c("both_unknown", "one_known", "pair"),
   assumed_error = NULL,
   n_candidates2 = n_candidates,
-  prop_sampled2 = prop_sampled
+  prop_sampled2 = prop_sampled,
+  max_mismatch = NULL,
+  min_loci = NULL
 )
 
 \method{print}{delta_sim}(x, ...)
@@ -49,6 +51,14 @@ Defaults to `n_candidates`.}
 
 \item{prop_sampled2}{For `type = "pair"`, the probability that the true
 mother is among the candidate mothers. Defaults to `prop_sampled`.}
+
+\item{max_mismatch, min_loci}{The candidate screens applied to the real data,
+applied here to the simulated data so that both are judged by the same
+rule: a simulated candidate (or pair) mismatching at more than
+`max_mismatch` loci, or compared at fewer than `min_loci`, is removed
+before the best candidate and Delta are found. Removing the true parent
+this way counts against the criterion, as it does in the real analysis.
+`NULL` applies no screen. Pass the same values used in [parentage_lod()].}
 
 \item{x}{A `"delta_sim"` object.}
 
