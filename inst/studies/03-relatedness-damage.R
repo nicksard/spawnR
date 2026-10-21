@@ -1,5 +1,5 @@
-suppressMessages(invisible(lapply(list.files("../R", full.names=TRUE), source)))
-source("./study3_fns.R")
+library(spawnR)  # run from inst/studies; uses the installed package
+source("03-relatedness-fns.R")
 
 err <- 0.01; n_off <- 800
 panels <- list(c(15,10,"15 msat x10"), c(8,5,"8 msat x5"), c(5,4,"5 msat x4"),

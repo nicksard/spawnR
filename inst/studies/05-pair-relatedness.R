@@ -1,4 +1,4 @@
-suppressMessages(invisible(lapply(list.files("../R", full.names=TRUE), source)))
+library(spawnR)  # run from inst/studies; uses the installed package
 # Pools where the true sire AND dam each have full sibs present, and both true
 # parents are jointly withheld from a fraction of offspring.
 build <- function(n_off, nloc, nall, nfs, nun, err, seed) {

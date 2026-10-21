@@ -1,5 +1,5 @@
-suppressMessages(invisible(lapply(list.files("../R", full.names=TRUE), source)))
-source("./study3_fns.R")
+library(spawnR)  # run from inst/studies; uses the installed package
+source("03-relatedness-fns.R")
 lod_set_ibd <- function(S, err, ibd) {
   L <- matrix(0, nrow(S$O1), S$ncand)
   for (l in seq_len(S$nloc)) { p <- S$freqs[[l]]

@@ -61,6 +61,9 @@ knitr::kable(cal, col.names = c("posterior bin", "n", "mean stated", "observed c
              caption = "Stated probability against observed frequency of being right.")
 ```
 
+*Results tables in this vignette are the printed output of `02-posterior-calibration.R` in `system.file("studies", package = "spawnR")`, last re-run with spawnR 0.8.0. They are typed in rather than computed when the vignette is built, because the simulations take minutes; re-run the script to check them.*
+
+
 The stated probability is the observed frequency, across the whole range. A
 posterior of 0.85 means about 85% of such assignments are right, and a posterior
 of 0.65 means about 65%, which is the property that lets you use the number

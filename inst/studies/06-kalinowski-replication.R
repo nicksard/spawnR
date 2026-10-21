@@ -1,4 +1,4 @@
-suppressMessages(invisible(lapply(list.files("../../R", full.names=TRUE), source)))
+library(spawnR)  # run from inst/studies; uses the installed package
 # Kalinowski, Taper & Marshall (2007), stated simulation parameters:
 #   "allele frequencies in the population were [0.25, 0.25, 0.2, 0.15, 0.05,
 #    0.05, 0.02, 0.01, 0.01, 0.005, 0.005]"

@@ -50,7 +50,7 @@ assigned.
 ```{r, echo = FALSE}
 res <- read.csv(text = "
 n_cand,prop_sampled,pw_assigned,pw_precision,pw_recall,d_assigned,d_precision,d_recall
-50,1.00,97.2,100.0,97.2,99.8,100.0,99.8
+50,1.00,97.2,100.0,97.2,100.0,100.0,100.0
 50,0.80,83.0,99.4,97.3,86.0,98.5,100.0
 50,0.50,48.5,95.4,96.9,52.5,90.5,99.5
 200,1.00,97.2,99.7,97.0,100.0,99.8,99.8
@@ -66,6 +66,13 @@ knitr::kable(res, col.names = c("candidates", "prop sampled",
   "assigned", "precision", "recall", "assigned", "precision", "recall"),
   caption = "Left three columns: pairwise criterion at alpha = 0.01. Right three: Delta at 95%.")
 ```
+
+*Results tables in this vignette are the printed output of `01-criteria-factorial.R` in `system.file("studies", package = "spawnR")`, last re-run with spawnR 0.8.0. They are typed in rather than computed when the vignette is built, because the simulations take minutes; re-run the script to check them.*
+
+One cell changed in 0.7.1. With 50 candidates and every sire sampled, the
+simulation produced no wrong assignment at all, and the critical Delta used to
+be set to the smallest simulated Delta rather than to 0, which rejected 0.2% of
+correct assignments for no reason. It is now 0, and that cell reads 100%.
 
 ## The two rules fail in opposite directions
 
@@ -83,7 +90,7 @@ every assignment made for them is necessarily wrong.
 
 The Delta criterion is the mirror image. Its precision holds between 90% and
 100% everywhere, which is what it was designed to do. Its recall is what gives
-way: 99.8 down to 54.1. It buys precision by refusing to assign, and in the
+way: 100 down to 54.1. It buys precision by refusing to assign, and in the
 hardest cell it assigns only 26% of offspring.
 
 So the choice is not which criterion is better. It is which error you would

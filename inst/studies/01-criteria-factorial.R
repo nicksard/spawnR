@@ -1,4 +1,4 @@
-suppressMessages(invisible(lapply(list.files("../R", full.names=TRUE), source)))
+library(spawnR)  # run from inst/studies; uses the installed package
 
 run_cells <- function(n_loci, n_alleles, err, label, seed = 100,
                       n_off = 400, n_pool = 6000,

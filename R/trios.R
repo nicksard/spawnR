@@ -436,6 +436,13 @@ assign_trios <- function(g, offspring, mothers = NULL, fathers = NULL, freqs, er
 #' @rdname assign_trios
 #' @export
 print.trio_assignment <- function(x, ...) {
+  need <- c("offspring", "mother", "father", "trio_mother", "trio_father",
+            "mother_significant", "father_significant", "trio_significant")
+  if (!all(need %in% names(x))) {
+    # a column subset of the result: print it as the plain table it now is
+    print.data.frame(x, ...)
+    return(invisible(x))
+  }
   conf <- attr(x, "confidence")
   cat("<trio_assignment>", nrow(x), "offspring\n")
   for (w in c("mother", "father", "trio")) {

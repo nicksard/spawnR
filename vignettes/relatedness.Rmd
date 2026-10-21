@@ -38,6 +38,9 @@ knitr::kable(d, col.names = c("panel", "full sibs of sire", "prop sire sampled",
                               "stated posterior", "observed correct"))
 ```
 
+*Results tables in this vignette are the printed output of `03-relatedness-damage.R`, `04-relatedness-fix.R` and `05-pair-relatedness.R` in `system.file("studies", package = "spawnR")`, last re-run with spawnR 0.8.0. They are typed in rather than computed when the vignette is built, because the simulations take minutes; re-run the scripts (from that directory) to check them.*
+
+
 Neither condition alone does harm. Ten full sibs with every sire sampled: 0.996
 stated, 0.997 observed. Half the sires missing with no relatives: 0.996 stated,
 0.997 observed. Both together: 0.993 stated, **0.838** observed.

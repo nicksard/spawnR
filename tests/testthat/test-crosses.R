@@ -95,3 +95,12 @@ test_that("the cross-design simulation draws the true cross from the list", {
                  crosses = cbind(1:3, 1:3), prop_sampled = 0)
   expect_false(any(d$correct))
 })
+
+test_that("a column subset of a trio_assignment still prints", {
+  fx <- cross_fixture()
+  set.seed(5)
+  a <- assign_trios(fx$sim$genotypes, fx$sim$offspring[1:3], freqs = fx$p,
+                    error = 0.01, crosses = fx$cr, nsim = 100, nsim_trio = 50)
+  expect_output(print(a[, c("offspring", "trio_mother")]), "trio_mother")
+  expect_output(print(head(a, 2)), "trio_assignment")
+})
