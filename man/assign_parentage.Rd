@@ -19,7 +19,8 @@ assign_parentage(
   nsim = 10000L,
   prop_sampled = NULL,
   prop_typed = NULL,
-  max_mismatch = NULL
+  max_mismatch = NULL,
+  min_loci = NULL
 )
 
 \method{print}{parentage_assignment}(x, ...)
@@ -59,10 +60,21 @@ model from concluding that no candidate is the parent, so it will always
 return a best guess.}
 
 \item{prop_typed}{For `criterion = "delta"`, the assumed proportion of
-genotypes scored. Defaults to the observed proportion.}
+genotypes scored. Defaults to the observed proportion among the offspring,
+candidates and known parents analysed.}
 
 \item{max_mismatch}{Optional cap on mismatching loci for a candidate to
 remain eligible.}
+
+\item{min_loci}{Optional minimum number of loci at which an offspring and
+  candidate must both be typed for the candidate to remain eligible; an
+  offspring typed at fewer loci is left unassigned. CERVUS applies a rule of
+  this kind; a common choice is half the loci.
+
+  For `criterion = "delta"`, both screens are also applied inside the
+  simulation, so that the critical Delta describes assignments made under
+  the same rule. The `"pairwise"` and `"posterior"` criteria do not simulate
+  the candidate pool and use the screens only to choose candidates.}
 
 \item{x}{A `"parentage_assignment"` object.}
 

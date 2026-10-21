@@ -74,9 +74,19 @@
 #'   model from concluding that no candidate is the parent, so it will always
 #'   return a best guess.
 #' @param prop_typed For `criterion = "delta"`, the assumed proportion of
-#'   genotypes scored. Defaults to the observed proportion.
+#'   genotypes scored. Defaults to the observed proportion among the offspring,
+#'   candidates and known parents analysed.
 #' @param max_mismatch Optional cap on mismatching loci for a candidate to
 #'   remain eligible.
+#' @param min_loci Optional minimum number of loci at which an offspring and
+#'   candidate must both be typed for the candidate to remain eligible; an
+#'   offspring typed at fewer loci is left unassigned. CERVUS applies a rule of
+#'   this kind; a common choice is half the loci.
+#'
+#'   For `criterion = "delta"`, both screens are also applied inside the
+#'   simulation, so that the critical Delta describes assignments made under
+#'   the same rule. The `"pairwise"` and `"posterior"` criteria do not simulate
+#'   the candidate pool and use the screens only to choose candidates.
 #'
 #' @return An object of class `"parentage_assignment"`: a `data.frame` with one
 #'   row per offspring giving the top candidate, its LOD, `delta`, the critical
@@ -115,7 +125,7 @@ assign_parentage <- function(g, offspring, candidates, freqs, error,
                              criterion = c("posterior", "pairwise", "delta"),
                              confidence = NULL, nsim = 10000L,
                              prop_sampled = NULL, prop_typed = NULL,
-                             max_mismatch = NULL) {
+                             max_mismatch = NULL, min_loci = NULL) {
   stopifnot(inherits(g, "genotypes"))
   type <- if (!is.null(known)) "one_known" else match.arg(type)
   criterion <- match.arg(criterion)
@@ -132,7 +142,8 @@ assign_parentage <- function(g, offspring, candidates, freqs, error,
   if (is.null(prop_sampled)) prop_sampled <- 1
 
   tab <- parentage_lod(g, offspring, candidates, freqs, error, known = known,
-                       type = type, max_mismatch = max_mismatch)
+                       type = type, max_mismatch = max_mismatch,
+                       min_loci = min_loci)
   best <- delta_stat(tab)
   off <- .as_ids(g, offspring, "offspring")
   kn <- if (type == "one_known") {
@@ -175,10 +186,14 @@ assign_parentage <- function(g, offspring, candidates, freqs, error,
                            critical = "per offspring, backward simulation",
                            stringsAsFactors = FALSE)
   } else {
-    if (is.null(prop_typed)) prop_typed <- mean(!is.na(g$a1))
+    if (is.null(prop_typed)) {
+      prop_typed <- .prop_typed(g, c(off, .as_ids(g, candidates, "candidates"),
+                                     kn[!is.na(kn)]))
+    }
     ds <- sim_delta(freqs, error = error, n_candidates = length(candidates),
                     prop_sampled = prop_sampled, prop_typed = prop_typed,
-                    nsim = nsim, type = type)
+                    nsim = nsim, type = type, max_mismatch = max_mismatch,
+                    min_loci = min_loci)
     dc <- delta_critical(ds, levels = confidence)
     for (j in seq_along(confidence)) {
       best[[paste0("crit_", confidence[j])]] <- dc$critical_delta[j]
@@ -203,6 +218,13 @@ assign_parentage <- function(g, offspring, candidates, freqs, error,
   attr(best, "type") <- type
   class(best) <- c("parentage_assignment", "data.frame")
   best
+}
+
+# Proportion of genotypes scored among the individuals actually analysed, so
+# that individuals in `g` but not in the analysis do not set the simulation's
+# missing-data rate.
+.prop_typed <- function(g, ids) {
+  mean(!is.na(g$a1[match(unique(ids), g$ids), , drop = FALSE]))
 }
 
 #' @param x A `"parentage_assignment"` object.

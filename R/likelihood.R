@@ -208,6 +208,17 @@ lod_locus <- function(o1, o2, c1, c2, p, error, k1 = NULL, k2 = NULL,
   out
 }
 
+# Per-locus LOD prepared for summation in a simulation: an untyped locus
+# contributes 0, and an outright exclusion (reachable only at zero error) the
+# same finite -700 that the scoring engine uses, so that simulated and observed
+# totals are computed the same way.
+.lod_for_sum <- function(v) {
+  v[is.na(v)] <- 0
+  inf <- is.infinite(v)
+  v[inf] <- sign(v[inf]) * 700
+  v
+}
+
 # Mendelian incompatibility of a candidate with an offspring, ignoring error.
 # Used for mismatch counting and for exclusion-based screening.
 .mismatch_locus <- function(o1, o2, c1, c2, p, k1 = NULL, k2 = NULL,

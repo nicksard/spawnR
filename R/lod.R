@@ -38,6 +38,11 @@
 #' @param max_mismatch If not `NULL`, rows with more than this many mismatching
 #'   loci are dropped from the result. Useful to keep output small when
 #'   screening many candidates.
+#' @param min_loci If not `NULL`, rows compared at fewer than this many loci
+#'   are dropped from the result. A comparison resting on a handful of loci has
+#'   a LOD that says little, and an offspring typed at too few loci then
+#'   receives no candidates at all. Like `max_mismatch`, applies to
+#'   `output = "long"` only.
 #' @param ibd Identity-by-descent coefficients `c(k0, k1, k2)` describing how a
 #'   *non-parent* candidate is related to the offspring, changing what the LOD
 #'   score is a ratio against. The default `NULL` means unrelated, `c(1, 0, 0)`,
@@ -97,7 +102,8 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
                           known = NULL,
                           type = c("both_unknown", "one_known", "pair"),
                           mothers = NULL, exclude_self = TRUE,
-                          max_mismatch = NULL, ibd = NULL, relatedness = NULL,
+                          max_mismatch = NULL, min_loci = NULL, ibd = NULL,
+                          relatedness = NULL,
                           output = c("long", "matrix")) {
   stopifnot(inherits(g, "genotypes"))
   type <- match.arg(type)
@@ -239,6 +245,7 @@ parentage_lod <- function(g, offspring, candidates, freqs, error,
     if (type == "one_known") drop <- drop | (!is.na(d$known) & d$candidate == d$known)
   }
   if (!is.null(max_mismatch)) drop <- drop | d$mismatches > max_mismatch
+  if (!is.null(min_loci)) drop <- drop | d$n_compared < min_loci
   chunks <- list(d[!drop, , drop = FALSE])
 
   out <- do.call(rbind, chunks)

@@ -1,3 +1,37 @@
+# spawnR 0.7.2
+
+The significance simulations now follow the same rules as the analysis they
+calibrate.
+
+* **Screens are applied inside the simulation.** `max_mismatch` dropped
+  candidates from the real data before Delta was computed, but the simulation
+  in `sim_delta()` never dropped anyone, so observed and simulated Deltas were
+  computed over different pools. `sim_delta()` gains `max_mismatch` and
+  `min_loci`. `assign_trios()` and `assign_parentage(criterion = "delta")` pass
+  their screens through, so a true parent removed by the screen counts against
+  the criterion, as it does in the real analysis. In a check with 3% error and
+  `max_mismatch = 1`, the 0.7.1 results were already close to calibrated and
+  this changed them little. The point is that the two now agree by
+  construction rather than by luck.
+* **New `min_loci` screen** in `parentage_lod()`, `assign_parentage()`,
+  `assign_trios()` and `sim_delta()`. A comparison scored at fewer than
+  `min_loci` loci is dropped, so an offspring typed at too few loci is left
+  unassigned instead of being judged against a threshold simulated at average
+  typing. CERVUS applies a rule of this kind; a common choice is half the
+  loci. The default `NULL` applies no screen.
+* **`prop_typed` defaults to the individuals analysed.** It was the typing rate
+  over every individual in the genotype object, including ones not in the
+  analysis. `assign_trios()` now uses the offspring, mothers and fathers;
+  `assign_parentage()` uses the offspring, candidates and known parents. This
+  shifts results only when the genotype object holds individuals with typing
+  rates different from those analysed.
+* **Exclusions at zero error are handled the same way in simulation and
+  scoring.** With `error = 0`, an outright Mendelian exclusion was scored as
+  -700 in real data, but the simulations in `sim_delta()`, `lod_null()` and
+  `pool_relatedness()` treated it as a locus not compared. All now use -700.
+  Results with `error > 0` (and no allele frequency of exactly 0) are
+  unchanged.
+
 # spawnR 0.7.1
 
 Fixes a calibration bug in the Delta criterion.

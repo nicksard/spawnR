@@ -35,6 +35,13 @@
 #'   Defaults to `n_candidates`.
 #' @param prop_sampled2 For `type = "pair"`, the probability that the true
 #'   mother is among the candidate mothers. Defaults to `prop_sampled`.
+#' @param max_mismatch,min_loci The candidate screens applied to the real data,
+#'   applied here to the simulated data so that both are judged by the same
+#'   rule: a simulated candidate (or pair) mismatching at more than
+#'   `max_mismatch` loci, or compared at fewer than `min_loci`, is removed
+#'   before the best candidate and Delta are found. Removing the true parent
+#'   this way counts against the criterion, as it does in the real analysis.
+#'   `NULL` applies no screen. Pass the same values used in [parentage_lod()].
 #'
 #' @section Parent pairs:
 #' With `type = "pair"` each replicate draws a true father and a true mother,
@@ -78,7 +85,8 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
                       prop_typed = 1, nsim = 10000L,
                       type = c("both_unknown", "one_known", "pair"),
                       assumed_error = NULL, n_candidates2 = n_candidates,
-                      prop_sampled2 = prop_sampled) {
+                      prop_sampled2 = prop_sampled, max_mismatch = NULL,
+                      min_loci = NULL) {
   type <- match.arg(type)
   nl <- length(freqs)
   e_true <- .expand_error(error, nl)
@@ -88,12 +96,14 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
   if (prop_sampled < 0 || prop_sampled > 1) stop("`prop_sampled` must lie in [0, 1].", call. = FALSE)
   if (type == "pair") {
     return(.sim_delta_pair(freqs, e_true, e_used, nc, as.integer(n_candidates2),
-                           prop_sampled, prop_sampled2, prop_typed, nsim))
+                           prop_sampled, prop_sampled2, prop_typed, nsim,
+                           max_mismatch = max_mismatch, min_loci = min_loci))
   }
 
   sampled <- stats::runif(nsim) < prop_sampled
   lodsum <- matrix(0, nsim, nc)
   n_comp <- matrix(0L, nsim, nc)
+  n_mis <- if (is.null(max_mismatch)) NULL else matrix(0L, nsim, nc)
 
   for (l in seq_len(nl)) {
     p <- freqs[[l]]
@@ -125,21 +135,26 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
     tb <- .locus_tab(k)
     Vl <- matrix(0, nsim, tb$G + 1L)
     Vn <- matrix(0L, nsim, tb$G + 1L)
+    Vm <- if (is.null(n_mis)) NULL else matrix(0L, nsim, tb$G + 1L)
     for (a in seq_len(tb$G)) {
       v <- lod_locus(og$a1, og$a2, tb$gi[a], tb$gj[a], p = p, error = e_used[l],
                      k1 = k1, k2 = k2, type = type)
-      fin <- is.finite(v)
-      v[!fin] <- 0
-      Vl[, a] <- v
-      Vn[, a] <- as.integer(fin)
+      Vl[, a] <- .lod_for_sum(v)
+      Vn[, a] <- as.integer(!is.na(v))
+      if (!is.null(Vm)) {
+        mm <- .mismatch_locus(og$a1, og$a2, tb$gi[a], tb$gj[a], p,
+                              k1 = k1, k2 = k2, type = type)
+        Vm[, a] <- as.integer(!is.na(mm) & mm)
+      }
     }
     ccode <- match(pmin(C1, C2) + (pmax(C1, C2) - 1L) * k, tb$gi + (tb$gj - 1L) * k)
     ccode[is.na(ccode)] <- tb$G + 1L
     idx <- cbind(rep(seq_len(nsim), nc), as.vector(ccode))
     lodsum <- lodsum + matrix(Vl[idx], nsim, nc)
     n_comp <- n_comp + matrix(Vn[idx], nsim, nc)
+    if (!is.null(n_mis)) n_mis <- n_mis + matrix(Vm[idx], nsim, nc)
   }
-  lodsum[n_comp == 0L] <- -Inf
+  lodsum[.screened_out(n_comp, n_mis, max_mismatch, min_loci)] <- -Inf
 
   top  <- max.col(lodsum, ties.method = "first")
   best <- lodsum[cbind(seq_len(nsim), top)]
@@ -166,7 +181,8 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
 # held as an nsim-by-(nf * nm) matrix whose column i + (j - 1) * nf is father i
 # with mother j, so column 1 is the true pair whenever both were sampled.
 .sim_delta_pair <- function(freqs, e_true, e_used, nf, nm, ps_f, ps_m,
-                            prop_typed, nsim, chunk = 4e6) {
+                            prop_typed, nsim, chunk = 4e6, max_mismatch = NULL,
+                            min_loci = NULL) {
   if (is.na(nm) || nm < 1L) stop("`n_candidates2` must be positive.", call. = FALSE)
   if (ps_m < 0 || ps_m > 1) stop("`prop_sampled2` must lie in [0, 1].", call. = FALSE)
   nl <- length(freqs)
@@ -180,6 +196,7 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
     samp_m <- stats::runif(ns) < ps_m
     lodsum <- matrix(0, ns, npair)
     n_comp <- matrix(0L, ns, npair)
+    n_mis <- if (is.null(max_mismatch)) NULL else matrix(0L, ns, npair)
 
     for (l in seq_len(nl)) {
       p <- freqs[[l]]
@@ -230,9 +247,15 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
         cols <- (j - 1L) * nf + seq_len(nf)
         lodsum[, cols] <- lodsum[, cols] + matrix(Vl[idx], ns, nf)
         n_comp[, cols] <- n_comp[, cols] + matrix(Vn[idx], ns, nf)
+        if (!is.null(n_mis)) {
+          # a trio mismatch, as counted for the real data: no way to draw the
+          # offspring from this mother and this father, ignoring error
+          Vm <- cbind(matrix(as.integer(typed & T_kc == 0), ns, tb$G), 0L)
+          n_mis[, cols] <- n_mis[, cols] + matrix(Vm[idx], ns, nf)
+        }
       }
     }
-    lodsum[n_comp == 0L] <- -Inf
+    lodsum[.screened_out(n_comp, n_mis, max_mismatch, min_loci)] <- -Inf
 
     top  <- max.col(lodsum, ties.method = "first")
     best <- lodsum[cbind(seq_len(ns), top)]
@@ -256,6 +279,16 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
                                 prop_typed = prop_typed, nsim = nsim,
                                 type = "pair", error = e_true)
   class(out) <- c("delta_sim", "data.frame")
+  out
+}
+
+# Simulated comparisons that the real-data screens would have removed: never
+# compared, compared at fewer than `min_loci` loci, or mismatching at more
+# than `max_mismatch`.
+.screened_out <- function(n_comp, n_mis, max_mismatch, min_loci) {
+  out <- n_comp == 0L
+  if (!is.null(min_loci)) out <- out | n_comp < min_loci
+  if (!is.null(max_mismatch)) out <- out | n_mis > max_mismatch
   out
 }
 
