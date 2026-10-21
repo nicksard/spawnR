@@ -9,8 +9,8 @@
 assign_trios(
   g,
   offspring,
-  mothers,
-  fathers,
+  mothers = NULL,
+  fathers = NULL,
   freqs,
   error,
   confidence = c(0.8, 0.95),
@@ -21,6 +21,9 @@ assign_trios(
   nsim_trio = 2000L,
   max_mismatch = NULL,
   min_loci = NULL,
+  crosses = NULL,
+  prop_sampled_crosses = 1,
+  set_level = 0.95,
   output = c("best", "all")
 )
 
@@ -33,9 +36,11 @@ assign_trios(
 
 \item{offspring}{Identifiers of the offspring.}
 
-\item{mothers}{Identifiers of the candidate mothers.}
+\item{mothers}{Identifiers of the candidate mothers. With `crosses`, defaults
+to the mothers in `crosses`.}
 
-\item{fathers}{Identifiers of the candidate fathers.}
+\item{fathers}{Identifiers of the candidate fathers. With `crosses`,
+defaults to the fathers in `crosses`.}
 
 \item{freqs}{An `"allele_freqs"` object.}
 
@@ -69,8 +74,21 @@ at too few loci is left unassigned. Also applied inside the significance
 simulations. CERVUS applies a rule of this kind; a common choice is half
 the loci.}
 
+\item{crosses}{Optional known mating design: a `data.frame` with columns
+`mother` and `father` (identifiers), one row per cross made, and
+optionally `weight`, the relative contribution of each cross (for example
+eggs fertilised). When given, only these crosses are scored as pairs; see
+the section on known crosses. The single-parent analyses still consider
+every candidate mother and father.}
+
+\item{prop_sampled_crosses}{With `crosses`, the probability that an
+offspring comes from one of the listed crosses. 1 means the cross list is
+complete and every offspring belongs to it.}
+
+\item{set_level}{With `crosses`, the posterior coverage of `trio_set`.}
+
 \item{output}{`"best"` for one row per offspring, or `"all"` for every
-mother-by-father combination of every offspring, ranked.}
+mother-by-father combination (or listed cross) of every offspring, ranked.}
 
 \item{x}{A `"trio_assignment"` object.}
 
@@ -85,6 +103,11 @@ With `output = "best"`, an object of class `"trio_assignment"`: a
   `n_compared`, mismatch counts and `confidence`, plus a logical
   `*_significant` at the lowest level tested. The critical values are
   attached as attribute `criteria` and the simulations as `delta_sims`.
+  With `crosses`, also `trio_posterior`, `trio_post_none` (the posterior that
+  the offspring is from no listed cross), `trio_set` and `trio_set_size`,
+  and attribute `families`: one row per cross with its weight, the
+  `expected` number of offspring (summed posteriors) and the number
+  `assigned` with a significant trio at the lowest confidence level.
 
   With `output = "all"`, a `data.frame` with one row per offspring, mother
   and father: `trio_lod` and its `rank` within the offspring, the
@@ -92,6 +115,7 @@ With `output = "best"`, an object of class `"trio_assignment"`: a
   `n_compared`. The top-ranked row of each offspring also carries `delta`,
   `confidence` and `significant`. Rows are sorted by offspring and rank, and
   with many candidates this table is large; `max_mismatch` keeps it small.
+  With `crosses`, rows are the listed crosses and carry a `posterior`.
 }
 \description{
 One call for the common design in which candidate mothers and candidate
@@ -121,6 +145,36 @@ Delta reaches the critical value, and `*_confidence` holds the highest level
 attained. For the trio, a simulated assignment only counts as correct when
 both parents are right, so the trio confidence is a statement about the pair.
 }
+\section{Known crosses}{
+
+In a hatchery or a controlled breeding design the crosses are known: dam 3
+was crossed with sires 1, 2 and 5, and so on. Supplying them as `crosses`
+changes the trio analysis from "which of every mother-by-father combination"
+to "which of the crosses actually made", which is both the right question
+and a much easier one. Only listed crosses are scored as pairs. The
+significance simulation reproduces the real design (the same mothers,
+fathers, and pattern of who was crossed with whom, so the runner-up is
+typically a cross sharing one parent with the true one, as it is in the
+data), and `prop_sampled_crosses` is the probability that an offspring comes
+from a listed cross at all.
+
+Because the candidate crosses are an exhaustive, known list, each offspring
+also gets a posterior probability for each cross,
+\deqn{\Pr(c \mid o) \propto \pi\, w_c\, e^{\mathrm{LOD}_c}, \qquad
+  \Pr(\text{none} \mid o) \propto 1 - \pi,}
+with \eqn{\pi} = `prop_sampled_crosses` and \eqn{w_c} the cross weights
+(normalised; equal unless given). This uses the fact that every pair LOD is
+a ratio against the same denominator, so differences between LODs are exact
+log-likelihood ratios between crosses. `trio_posterior` is the posterior of
+the best cross, and `trio_set` the smallest set of crosses whose posteriors
+sum to at least `set_level`: one cross when the data decide, several when
+they do not - typically half-sib crosses sharing a parent. The posteriors
+summed over offspring estimate how many offspring each cross produced, in
+attribute `families`. All of this assumes that unrelated non-parents are the
+alternative; relatives of the true parents among the crossed fish are not
+modelled.
+}
+
 \section{Mismatches}{
 
 The `*_mismatches` columns count loci at which the named parent is
@@ -148,6 +202,16 @@ all <- assign_trios(sim$genotypes, sim$offspring[1], sim$dams, sim$sires,
                     p, error = 0.01, nsim = 500, nsim_trio = 200,
                     output = "all")
 head(all)
+
+# a known mating design: each dam crossed with two sires
+cr <- data.frame(mother = rep(sim$dams[1:5], each = 2),
+                 father = sim$sires[c(1, 2, 2, 3, 3, 4, 4, 5, 5, 1)])
+kids <- sim$pedigree$offspring[1:6]
+ac <- assign_trios(sim$genotypes, kids, freqs = p, error = 0.01,
+                   crosses = cr, nsim = 500, nsim_trio = 300)
+ac[, c("offspring", "trio_mother", "trio_father", "trio_delta",
+       "trio_confidence", "trio_posterior", "trio_set")]
+attr(ac, "families")
 }
 \references{
 Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998)

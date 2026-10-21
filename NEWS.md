@@ -1,3 +1,35 @@
+# spawnR 0.8.0
+
+Known crosses.
+
+* `assign_trios()` gains `crosses`: the mating design actually used, one row
+  per cross (`mother`, `father`, and optionally `weight`, e.g. eggs
+  fertilised). The trio question becomes "which of the crosses made is this
+  offspring from", not "which of every mother-by-father combination".
+  `mothers` and `fathers` default to the parents in `crosses`.
+  - **Significance from the real design.** `sim_delta(type = "pair")` gains
+    `crosses` and `cross_weights`. The simulation uses the same mothers,
+    fathers and pattern of who was crossed with whom, and draws the true cross
+    from the list, so the runner-up is typically a half-sib cross sharing a
+    parent, as in the data. `prop_sampled_crosses` is the probability that an
+    offspring comes from a listed cross at all.
+  - **Posterior over crosses.** Pair LODs share a denominator, so their
+    differences are exact log-likelihood ratios between crosses. Each
+    offspring gets `trio_posterior` (the best cross), `trio_post_none` (from
+    no listed cross), and `trio_set`, the smallest set of crosses reaching
+    `set_level` (0.95) posterior. The set is one cross when the data decide,
+    several (usually half-sib crosses) when they do not. Weights act as a
+    prior.
+  - **Family sizes.** Attribute `families` gives each cross its expected
+    number of offspring (summed posteriors) and the number assigned
+    significantly, and `summary()` prints it.
+  - **Calibration check.** 10 dams x 10 sires, each dam crossed with 3 sires,
+    120 offspring, 6 replicates. With 4 four-allele loci, 82% of top crosses
+    were correct (58% when scoring all combinations), and the share assigned at
+    95% rose from 20% to 63% at 93.8% precision. 97.9% of 95% cross sets
+    contained the true cross, with a mean set size of 1.9. With 6 five-allele
+    loci, 98% were correct against 92%.
+
 # spawnR 0.7.2
 
 The significance simulations now follow the same rules as the analysis they

@@ -17,7 +17,9 @@ sim_delta(
   n_candidates2 = n_candidates,
   prop_sampled2 = prop_sampled,
   max_mismatch = NULL,
-  min_loci = NULL
+  min_loci = NULL,
+  crosses = NULL,
+  cross_weights = NULL
 )
 
 \method{print}{delta_sim}(x, ...)
@@ -60,6 +62,18 @@ before the best candidate and Delta are found. Removing the true parent
 this way counts against the criterion, as it does in the real analysis.
 `NULL` applies no screen. Pass the same values used in [parentage_lod()].}
 
+\item{crosses}{For `type = "pair"`, an optional mating design: a two-column
+matrix or `data.frame` giving, for each cross that was made, the index of
+the father (in `1..n_candidates`) and of the mother (in
+`1..n_candidates2`). Only these pairs compete, the true pair is one of
+them, and `prop_sampled` becomes the probability that an offspring comes
+from a listed cross at all (otherwise both its parents are outside the
+pools); `prop_sampled2` is ignored. See the section on mating designs.}
+
+\item{cross_weights}{Optional relative contribution of each cross, for
+example the number of eggs fertilised, used to draw the true cross.
+Defaults to equal weights.}
+
 \item{x}{A `"delta_sim"` object.}
 
 \item{...}{Ignored.}
@@ -88,6 +102,19 @@ This is the population-averaged alternative to the trio-specific criterion of
 [lod_null()]. Both are provided so that the two can be compared on the same
 data, which is the comparison Amiri Roudbar et al. (2025) make.
 }
+\section{Mating designs}{
+
+When the crosses are known, the question is not which of all possible
+mother-father combinations is the parent pair, but which of the crosses
+actually made. That is a much smaller and more structured set: in a factorial
+design, each wrong cross shares a parent with many others, and the
+runner-up to the true cross is typically a cross sharing one of its parents.
+Supplying `crosses` makes the simulation reproduce that structure exactly,
+with the real number of mothers, fathers and crosses and the real pattern of
+which parents were crossed with which, so the critical Delta answers the
+question being asked of the real data.
+}
+
 \section{Parent pairs}{
 
 With `type = "pair"` each replicate draws a true father and a true mother,
