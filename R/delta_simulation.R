@@ -268,6 +268,16 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
 #' most permissive threshold that still attains it. The conventional relaxed and
 #' strict levels of 80% and 95% are the defaults.
 #'
+#' When the simulated assignments taken all together already attain a level,
+#' no threshold is needed and the critical value is 0, as CERVUS reports. This
+#' is the usual outcome with a powerful marker panel: every simulated
+#' assignment is correct, so the simulation locates no Delta below which
+#' assignments become unreliable. Such a 0 is flagged `resolved = FALSE` to
+#' distinguish "any assignment with a positive-LOD contender passes" from a
+#' threshold the simulation actually located. Increasing `nsim`, or adding
+#' realism to the simulation (lower `prop_sampled`, related candidates), is the
+#' way to probe whether a threshold exists below the simulated range.
+#'
 #' @param x A `"delta_sim"` object from [sim_delta()].
 #' @param levels Confidence levels.
 #' @param min_n Minimum number of simulated assignments that must lie above a
@@ -276,9 +286,15 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
 #' @param ... Ignored.
 #'
 #' @return A `data.frame` with columns `confidence`, `critical_delta`,
-#'   `n_above` and `prop_correct`. `critical_delta` is `NA` when no threshold
-#'   attains the level, which happens when too few of the true parents were
-#'   sampled or the markers are too weak.
+#'   `n_above`, `prop_correct` and `resolved`. `critical_delta` is `NA` when no
+#'   threshold attains the level, which happens when too few of the true parents
+#'   were sampled or the markers are too weak. It is `0` when every simulated
+#'   assignment with a Delta, taken together, attains the level; `n_above` is
+#'   then the number of such assignments and `prop_correct` their proportion
+#'   correct. `resolved` is `TRUE` when the critical value is a positive
+#'   threshold located within the simulated Deltas, `FALSE` when it was set to
+#'   0 because the whole simulation already attains the level, and `NA` when the
+#'   level is not attained.
 #'
 #' @references
 #' Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998)
@@ -297,20 +313,27 @@ delta_critical <- function(x, levels = c(0.80, 0.95), min_n = 20L, ...) {
   d <- x[!is.na(x$delta), , drop = FALSE]
   if (nrow(d) == 0L) {
     return(data.frame(confidence = levels, critical_delta = NA_real_,
-                      n_above = 0L, prop_correct = NA_real_))
+                      n_above = 0L, prop_correct = NA_real_, resolved = NA))
   }
   o <- order(d$delta, decreasing = TRUE)
   dd <- d$delta[o]
   cum <- cumsum(d$correct[o]) / seq_along(o)
+  n <- length(cum)
   res <- lapply(levels, function(lv) {
     ok <- which(cum >= lv & seq_along(cum) >= min_n)
     if (length(ok) == 0L) {
       data.frame(confidence = lv, critical_delta = NA_real_, n_above = 0L,
-                 prop_correct = NA_real_)
+                 prop_correct = NA_real_, resolved = NA)
+    } else if (max(ok) == n) {
+      # The whole simulation attains the level, so no threshold is needed.
+      # Returning dd[n], the smallest simulated Delta, would reject real
+      # assignments below it although the simulation saw no error there.
+      data.frame(confidence = lv, critical_delta = 0, n_above = n,
+                 prop_correct = cum[n], resolved = FALSE)
     } else {
       i <- max(ok)
       data.frame(confidence = lv, critical_delta = dd[i], n_above = i,
-                 prop_correct = cum[i])
+                 prop_correct = cum[i], resolved = TRUE)
     }
   })
   out <- do.call(rbind, res)

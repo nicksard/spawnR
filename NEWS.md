@@ -1,3 +1,38 @@
+# spawnR 0.7.1
+
+Fixes a calibration bug in the Delta criterion.
+
+* **`delta_critical()` no longer turns a perfect simulation into a high bar.**
+  When every simulated assignment was correct, the critical Delta came back as
+  the *smallest simulated Delta* rather than 0. The simulation had seen no wrong
+  assignment at any Delta, yet any real assignment below that minimum was called
+  non-significant. The tell-tale sign was an identical `critical_delta` at the
+  80% and 95% levels. The critical value is now 0 whenever the simulated
+  assignments taken all together attain the level, matching the 0.00 CERVUS
+  reports. Otherwise the threshold is unchanged: the smallest Delta at which
+  the cumulative proportion correct still meets the level, subject to `min_n`.
+  The result is still `NA` when the level is never reached.
+
+  **Who is affected:** anyone using `delta_critical()` directly, or through
+  `assign_trios()` or `assign_parentage(criterion = "delta")`, with a panel
+  strong enough that the simulation contains no wrong assignments. Typically
+  that means hundreds of SNPs or many microsatellites, especially with small
+  candidate pools. In these cases the 0.7.0 results understated significance,
+  sometimes badly. On a 2-dam x 4-sire test where every offspring was assigned
+  correctly in simulation, only 79-85% were called significant, and the trio
+  critical Delta moved between about 14 and 65 depending on the locus set.
+  Re-run those analyses. Calls made at a positive, located threshold are
+  unaffected.
+
+* `delta_critical()` gains a `resolved` column: `TRUE` for a positive threshold
+  located within the simulated Deltas, `FALSE` when the critical value is 0
+  because the whole simulation already attains the level, and `NA` when the
+  level is not reached. A `FALSE` means "any assignment with a positive-LOD
+  contender passes", not that a threshold was found. The column is carried
+  into the `criteria` attribute of `assign_trios()` and `assign_parentage()`.
+* Unit tests now use testthat (`tests/testthat/`), alongside the existing
+  `tests/test-spawnR.R` script. testthat is added to Suggests.
+
 # spawnR 0.7.0
 
 Mothers, fathers and trios in one call, each with a significance test.
