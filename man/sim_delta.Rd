@@ -12,8 +12,10 @@ sim_delta(
   prop_sampled = 1,
   prop_typed = 1,
   nsim = 10000L,
-  type = c("both_unknown", "one_known"),
-  assumed_error = NULL
+  type = c("both_unknown", "one_known", "pair"),
+  assumed_error = NULL,
+  n_candidates2 = n_candidates,
+  prop_sampled2 = prop_sampled
 )
 
 \method{print}{delta_sim}(x, ...)
@@ -24,19 +26,29 @@ sim_delta(
 \item{error}{Genotyping error rate assumed when computing LOD scores, and
 used to generate errors, one value or one per locus.}
 
-\item{n_candidates}{Number of candidate parents offered for each offspring.}
+\item{n_candidates}{Number of candidate parents offered for each offspring.
+For `type = "pair"`, the number of candidate fathers.}
 
-\item{prop_sampled}{Probability that the true parent is among the candidates.}
+\item{prop_sampled}{Probability that the true parent is among the candidates.
+For `type = "pair"`, the probability that the true father is.}
 
 \item{prop_typed}{Probability that any given genotype is scored.}
 
 \item{nsim}{Number of simulated assignments.}
 
-\item{type}{`"both_unknown"` or `"one_known"`; for the latter a known second
-parent is generated and used in the likelihood.}
+\item{type}{`"both_unknown"`, `"one_known"` or `"pair"`. For `"one_known"`
+a known second parent is generated and used in the likelihood. For
+`"pair"` both parents are unknown and every combination of candidate
+father and candidate mother is scored jointly; see the section below.}
 
 \item{assumed_error}{Error rate used in the likelihood if it should differ
 from the rate used to generate errors. Defaults to `error`.}
+
+\item{n_candidates2}{For `type = "pair"`, the number of candidate mothers.
+Defaults to `n_candidates`.}
+
+\item{prop_sampled2}{For `type = "pair"`, the probability that the true
+mother is among the candidate mothers. Defaults to `prop_sampled`.}
 
 \item{x}{A `"delta_sim"` object.}
 
@@ -45,7 +57,8 @@ from the rate used to generate errors. Defaults to `error`.}
 \value{
 An object of class `"delta_sim"`: a `data.frame` with columns `delta`,
   `lod` (of the top candidate), `correct` (whether the top candidate is the
-  true parent) and `sampled` (whether the true parent was in the pool).
+  true parent) and `sampled` (whether the true parent was in the pool; for
+  `type = "pair"`, whether both were).
 }
 \description{
 Reproduces the simulation of Marshall et al. (1998), which underlies the
@@ -65,6 +78,23 @@ This is the population-averaged alternative to the trio-specific criterion of
 [lod_null()]. Both are provided so that the two can be compared on the same
 data, which is the comparison Amiri Roudbar et al. (2025) make.
 }
+\section{Parent pairs}{
+
+With `type = "pair"` each replicate draws a true father and a true mother,
+an offspring from them, `n_candidates` unrelated candidate fathers and
+`n_candidates2` unrelated candidate mothers, and places each true parent in
+its pool with its own sampling probability. All
+`n_candidates * n_candidates2` pairs are scored with the joint trio LOD, and
+Delta is the gap between the best and second-best pair. An assignment counts
+as correct only when the top pair is the true father *and* the true mother,
+so the critical values from [delta_critical()] state the confidence that the
+whole trio is right. The runner-up is very often a pair sharing one true
+parent, which is exactly the confusion the criterion has to price in.
+
+The cost grows with the product of the two pool sizes, so replicates are
+processed in chunks to bound memory.
+}
+
 \examples{
 sim <- simulate_population(n = 30, n_loci = 8, n_alleles = 6, seed = 5)
 p <- allele_freqs(sim$genotypes)

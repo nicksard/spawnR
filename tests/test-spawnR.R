@@ -534,5 +534,79 @@ g2 <- genotypes(raw2, id_col = "id")
 ok(is.na(g2$a1[2, 1]) && is.na(g2$a1[1, 2]),
    "'*' and '-9' are read as missing genotypes")
 
+## ------------------------------------------------- parent pairs and trios
+set.seed(21)
+simt <- simulate_population(n = 40, n_loci = 10, n_alleles = 8, n_offspring = 12,
+                            error = 0.01, seed = 21)
+pt <- allele_freqs(simt$genotypes)
+
+dsp <- sim_delta(pt, 0.01, n_candidates = 4, n_candidates2 = 3, nsim = 300,
+                 type = "pair")
+ok(inherits(dsp, "delta_sim") && nrow(dsp) == 300L, "sim_delta(type = 'pair') runs")
+ok(all(dsp$delta[!is.na(dsp$delta)] >= 0), "pair Delta is non-negative")
+ok(all(!dsp$correct | dsp$sampled), "a pair is only correct when both parents were sampled")
+dsp0 <- sim_delta(pt, 0.01, n_candidates = 4, n_candidates2 = 3, nsim = 200,
+                  type = "pair", prop_sampled = 1, prop_sampled2 = 0)
+ok(!any(dsp0$correct), "no pair is correct when the true mother is never sampled")
+
+# Small chunks still cover every replicate.
+a2 <- spawnR:::.sim_delta_pair(pt, rep(0.01, 10), rep(0.01, 10), 3L, 2L,
+                                             1, 1, 1, 50L, chunk = 6 * 7)
+ok(nrow(a2) == 50L && all(a2$sampled), "chunked pair simulation returns every replicate")
+
+at <- assign_trios(simt$genotypes, simt$offspring, simt$dams, simt$sires, pt,
+                   error = 0.01, nsim = 400, nsim_trio = 150)
+ok(inherits(at, "trio_assignment") && nrow(at) == length(simt$offspring),
+   "assign_trios returns one row per offspring")
+ped_t <- simt$pedigree[match(at$offspring, simt$pedigree$offspring), ]
+ok(mean(at$trio_mother == ped_t$dam & at$trio_father == ped_t$sire) >= 0.9,
+   "assign_trios recovers the true trio with ten 8-allele loci")
+
+tabp <- parentage_lod(simt$genotypes, simt$offspring, simt$sires, pt, 0.01,
+                      type = "pair", mothers = simt$dams)
+dsx <- delta_stat(tabp)
+ok(identical(dsx$candidate, at$trio_father) && identical(dsx$candidate2, at$trio_mother) &&
+   isTRUE(all.equal(dsx$delta, at$trio_delta)),
+   "trio best pair and Delta agree with delta_stat()")
+dsm <- delta_stat(parentage_lod(simt$genotypes, simt$offspring, simt$dams, pt, 0.01))
+ok(identical(dsm$candidate, at$mother) && isTRUE(all.equal(dsm$delta, at$mother_delta)) &&
+   identical(as.integer(dsm$mismatches), at$mother_mismatches),
+   "best mother, Delta and mismatches agree with delta_stat()")
+
+# Per-parent mismatch counts are exclusion counts against the offspring alone.
+i <- 1L
+ref_mm <- function(o, par) sum(vapply(seq_len(n_loci(simt$genotypes)), function(l) {
+  gg <- simt$genotypes
+  isTRUE(spawnR:::.mismatch_locus(gg$a1[o, l], gg$a2[o, l], gg$a1[par, l], gg$a2[par, l],
+                                  pt[[l]], type = "both_unknown"))
+}, logical(1)))
+oi <- match(at$offspring[i], simt$genotypes$ids)
+ok(ref_mm(oi, match(at$trio_mother[i], simt$genotypes$ids)) == at$trio_mother_mismatches[i] &&
+   ref_mm(oi, match(at$trio_father[i], simt$genotypes$ids)) == at$trio_father_mismatches[i],
+   "trio parent mismatches are single-parent exclusion counts")
+ok(all(at$trio_mismatches >= pmax(at$trio_mother_mismatches, at$trio_father_mismatches)),
+   "trio mismatches are at least each parent's own")
+
+crt <- attr(at, "criteria")
+ok(identical(unique(crt$analysis), c("mother", "father", "trio")),
+   "critical Delta is reported for mother, father and trio")
+tc <- crt[crt$analysis == "trio", ]
+sig <- !is.na(at$trio_delta) & !is.na(tc$critical_delta[1]) &
+  at$trio_delta >= tc$critical_delta[1]
+ok(identical(sig, at$trio_significant), "trio significance is Delta >= critical Delta")
+
+al <- assign_trios(simt$genotypes, simt$offspring[1:2], simt$dams, simt$sires, pt,
+                   error = 0.01, nsim = 200, nsim_trio = 50, output = "all")
+ok(nrow(al) == 2L * length(simt$dams) * length(simt$sires),
+   "output = 'all' lists every mother-by-father combination")
+ok(all(al$rank[!duplicated(al$offspring)] == 1L) &&
+   all(is.na(al$delta[al$rank > 1L])), "only the top-ranked trio carries Delta")
+ok(identical(al$father[al$rank == 1L], at$trio_father[1:2]),
+   "the top of the full table is the best trio")
+alm <- assign_trios(simt$genotypes, simt$offspring[1:2], simt$dams, simt$sires, pt,
+                    error = 0.01, nsim = 200, nsim_trio = 50, output = "all",
+                    max_mismatch = 1)
+ok(all(alm$trio_mismatches <= 1L), "max_mismatch filters the full table")
+
 
 cat("\nAll tests passed.\n")

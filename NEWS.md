@@ -1,3 +1,27 @@
+# spawnR 0.7.0
+
+Mothers, fathers and trios in one call, each with a significance test.
+
+* New `assign_trios()`. Given offspring, candidate mothers and candidate
+  fathers, it returns one row per offspring with the most likely mother, the
+  most likely father, and the most likely mother-father pair chosen on the joint
+  trio LOD. For each of the three it reports the LOD, Delta, loci compared, the
+  Delta confidence level attained and whether it is significant. It also counts
+  mismatching loci (exclusion alone, ignoring error) for each parent separately,
+  and for the trio jointly.
+  `output = "all"` returns every mother-by-father combination per offspring,
+  ranked, with both single-parent LODs and all three mismatch counts.
+* `sim_delta()` gains `type = "pair"`, with `n_candidates2` and
+  `prop_sampled2` for the mother pool. Until now, Delta significance existed only
+  for single parents. A simulated pair counts as correct only when both parents
+  are right, so the critical Delta is a statement about the whole trio.
+  Replicates are chunked to bound memory, and 1000 replicates against 60 x 60
+  candidate pairs at 12 loci take about 8 s.
+* Calibration check: 6 replicate populations, 7 six-allele loci, 70% of each
+  sex sampled. Observed precision at the stated levels was 81.0% / 95.5% for
+  mothers, 81.5% / 98.1% for fathers, and 80.5% / 94.4% for trios, at 80% / 95%
+  respectively.
+
 # spawnR 0.6.0
 
 External validation against the published literature and against CERVUS itself.

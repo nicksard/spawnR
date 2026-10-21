@@ -20,17 +20,41 @@
 #' @param error Genotyping error rate assumed when computing LOD scores, and
 #'   used to generate errors, one value or one per locus.
 #' @param n_candidates Number of candidate parents offered for each offspring.
+#'   For `type = "pair"`, the number of candidate fathers.
 #' @param prop_sampled Probability that the true parent is among the candidates.
+#'   For `type = "pair"`, the probability that the true father is.
 #' @param prop_typed Probability that any given genotype is scored.
 #' @param nsim Number of simulated assignments.
-#' @param type `"both_unknown"` or `"one_known"`; for the latter a known second
-#'   parent is generated and used in the likelihood.
+#' @param type `"both_unknown"`, `"one_known"` or `"pair"`. For `"one_known"`
+#'   a known second parent is generated and used in the likelihood. For
+#'   `"pair"` both parents are unknown and every combination of candidate
+#'   father and candidate mother is scored jointly; see the section below.
 #' @param assumed_error Error rate used in the likelihood if it should differ
 #'   from the rate used to generate errors. Defaults to `error`.
+#' @param n_candidates2 For `type = "pair"`, the number of candidate mothers.
+#'   Defaults to `n_candidates`.
+#' @param prop_sampled2 For `type = "pair"`, the probability that the true
+#'   mother is among the candidate mothers. Defaults to `prop_sampled`.
+#'
+#' @section Parent pairs:
+#' With `type = "pair"` each replicate draws a true father and a true mother,
+#' an offspring from them, `n_candidates` unrelated candidate fathers and
+#' `n_candidates2` unrelated candidate mothers, and places each true parent in
+#' its pool with its own sampling probability. All
+#' `n_candidates * n_candidates2` pairs are scored with the joint trio LOD, and
+#' Delta is the gap between the best and second-best pair. An assignment counts
+#' as correct only when the top pair is the true father *and* the true mother,
+#' so the critical values from [delta_critical()] state the confidence that the
+#' whole trio is right. The runner-up is very often a pair sharing one true
+#' parent, which is exactly the confusion the criterion has to price in.
+#'
+#' The cost grows with the product of the two pool sizes, so replicates are
+#' processed in chunks to bound memory.
 #'
 #' @return An object of class `"delta_sim"`: a `data.frame` with columns `delta`,
 #'   `lod` (of the top candidate), `correct` (whether the top candidate is the
-#'   true parent) and `sampled` (whether the true parent was in the pool).
+#'   true parent) and `sampled` (whether the true parent was in the pool; for
+#'   `type = "pair"`, whether both were).
 #'
 #' @references
 #' Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998)
@@ -52,8 +76,9 @@
 #' @export
 sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
                       prop_typed = 1, nsim = 10000L,
-                      type = c("both_unknown", "one_known"),
-                      assumed_error = NULL) {
+                      type = c("both_unknown", "one_known", "pair"),
+                      assumed_error = NULL, n_candidates2 = n_candidates,
+                      prop_sampled2 = prop_sampled) {
   type <- match.arg(type)
   nl <- length(freqs)
   e_true <- .expand_error(error, nl)
@@ -61,6 +86,10 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
   nsim <- as.integer(nsim); nc <- as.integer(n_candidates)
   if (nsim < 1L || nc < 1L) stop("`nsim` and `n_candidates` must be positive.", call. = FALSE)
   if (prop_sampled < 0 || prop_sampled > 1) stop("`prop_sampled` must lie in [0, 1].", call. = FALSE)
+  if (type == "pair") {
+    return(.sim_delta_pair(freqs, e_true, e_used, nc, as.integer(n_candidates2),
+                           prop_sampled, prop_sampled2, prop_typed, nsim))
+  }
 
   sampled <- stats::runif(nsim) < prop_sampled
   lodsum <- matrix(0, nsim, nc)
@@ -132,6 +161,104 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
   out
 }
 
+# Parent-pair version of sim_delta(). Candidate fathers play the role of `c`
+# and candidate mothers of `k` in lod_locus(type = "pair"). Pair scores are
+# held as an nsim-by-(nf * nm) matrix whose column i + (j - 1) * nf is father i
+# with mother j, so column 1 is the true pair whenever both were sampled.
+.sim_delta_pair <- function(freqs, e_true, e_used, nf, nm, ps_f, ps_m,
+                            prop_typed, nsim, chunk = 4e6) {
+  if (is.na(nm) || nm < 1L) stop("`n_candidates2` must be positive.", call. = FALSE)
+  if (ps_m < 0 || ps_m > 1) stop("`prop_sampled2` must lie in [0, 1].", call. = FALSE)
+  nl <- length(freqs)
+  npair <- nf * nm
+  per <- max(1L, floor(chunk / npair))
+  parts <- list()
+
+  for (s in seq(1L, nsim, by = per)) {
+    ns <- min(per, nsim - s + 1L)
+    samp_f <- stats::runif(ns) < ps_f
+    samp_m <- stats::runif(ns) < ps_m
+    lodsum <- matrix(0, ns, npair)
+    n_comp <- matrix(0L, ns, npair)
+
+    for (l in seq_len(nl)) {
+      p <- freqs[[l]]
+      k <- length(p)
+      dr <- function(m) sample.int(k, m, TRUE, prob = p)
+
+      f1 <- dr(ns); f2 <- dr(ns); m1 <- dr(ns); m2 <- dr(ns)
+      o_f <- ifelse(stats::runif(ns) < 0.5, f1, f2)
+      o_m <- ifelse(stats::runif(ns) < 0.5, m1, m2)
+
+      F1 <- matrix(dr(ns * nf), ns, nf); F2 <- matrix(dr(ns * nf), ns, nf)
+      M1 <- matrix(dr(ns * nm), ns, nm); M2 <- matrix(dr(ns * nm), ns, nm)
+      F1[samp_f, 1L] <- f1[samp_f]; F2[samp_f, 1L] <- f2[samp_f]
+      M1[samp_m, 1L] <- m1[samp_m]; M2[samp_m, 1L] <- m2[samp_m]
+
+      og <- .apply_missing(.apply_error(o_f, o_m, e_true[l], p), prop_typed)
+      fg <- .apply_missing(.apply_error(as.vector(F1), as.vector(F2), e_true[l], p), prop_typed)
+      mg <- .apply_missing(.apply_error(as.vector(M1), as.vector(M2), e_true[l], p), prop_typed)
+      M1 <- matrix(mg$a1, ns, nm); M2 <- matrix(mg$a2, ns, nm)
+
+      tb <- .locus_tab(k)
+      fcode <- match(pmin(fg$a1, fg$a2) + (pmax(fg$a1, fg$a2) - 1L) * k,
+                     tb$gi + (tb$gj - 1L) * k)
+      fcode[is.na(fcode)] <- tb$G + 1L
+      idx <- cbind(rep(seq_len(ns), nf), fcode)
+
+      # LOD of every possible father genotype at once (replicates in rows,
+      # genotypes in columns), given each mother in turn, then a lookup for
+      # the fathers actually in the pool. This is lod_locus(type = "pair")
+      # unrolled so that the terms not involving the mother are computed once.
+      ee <- e_used[l]
+      w0 <- (1 - ee)^3; w1 <- ee * (1 - ee)^2; w23 <- 3 * ee^2 * (1 - ee) + ee^3
+      ca1 <- rep(tb$gi, each = ns); ca2 <- rep(tb$gj, each = ns)
+      oa1 <- rep(og$a1, tb$G); oa2 <- rep(og$a2, tb$G)
+      Po <- rep(geno_freq(og$a1, og$a2, p), tb$G)
+      T_c <- trans_prob(oa1, oa2, ca1, ca2, p)
+      for (j in seq_len(nm)) {
+        T_k <- rep(trans_prob(og$a1, og$a2, M1[, j], M2[, j], p), tb$G)
+        T_kc <- trans_prob_pair(oa1, oa2, rep(M1[, j], tb$G), rep(M2[, j], tb$G),
+                                ca1, ca2, p)
+        num <- w0 * T_kc + w1 * (T_k + T_c + Po) + w23 * Po
+        v <- log(pmax(num, 1e-300)) - log(Po)
+        typed <- !is.na(v)
+        v[!typed] <- 0
+        v[typed & num == 0] <- -700
+        Vl <- cbind(matrix(v, ns, tb$G), 0)
+        Vn <- cbind(matrix(as.integer(typed), ns, tb$G), 0L)
+        cols <- (j - 1L) * nf + seq_len(nf)
+        lodsum[, cols] <- lodsum[, cols] + matrix(Vl[idx], ns, nf)
+        n_comp[, cols] <- n_comp[, cols] + matrix(Vn[idx], ns, nf)
+      }
+    }
+    lodsum[n_comp == 0L] <- -Inf
+
+    top  <- max.col(lodsum, ties.method = "first")
+    best <- lodsum[cbind(seq_len(ns), top)]
+    npos <- rowSums(lodsum > 0)
+    second <- rep(-Inf, ns)
+    if (npair >= 2L) {
+      lodsum[cbind(seq_len(ns), top)] <- -Inf
+      second <- lodsum[cbind(seq_len(ns), max.col(lodsum, ties.method = "first"))]
+    }
+    delta <- ifelse(npos >= 2L, best - second, ifelse(npos == 1L, best, NA_real_))
+    delta[!is.finite(best)] <- NA_real_
+    both <- samp_f & samp_m
+    parts[[length(parts) + 1L]] <- data.frame(
+      delta = delta, lod = ifelse(is.finite(best), best, NA_real_),
+      correct = both & top == 1L & npos >= 1L, sampled = both)
+  }
+
+  out <- do.call(rbind, parts)
+  attr(out, "settings") <- list(n_candidates = nf, n_candidates2 = nm,
+                                prop_sampled = ps_f, prop_sampled2 = ps_m,
+                                prop_typed = prop_typed, nsim = nsim,
+                                type = "pair", error = e_true)
+  class(out) <- c("delta_sim", "data.frame")
+  out
+}
+
 #' Critical Delta values at stated confidence
 #'
 #' Applies the definition of confidence used by Marshall et al. (1998): the
@@ -197,7 +324,10 @@ delta_critical <- function(x, levels = c(0.80, 0.95), min_n = 20L, ...) {
 #' @export
 print.delta_sim <- function(x, ...) {
   s <- attr(x, "settings")
-  cat("<delta_sim>", s$nsim, "assignments,", s$n_candidates, "candidates, type =", s$type, "\n")
+  pool <- if (identical(s$type, "pair")) {
+    paste0(s$n_candidates, " x ", s$n_candidates2, " candidate pairs,")
+  } else paste(s$n_candidates, "candidates,")
+  cat("<delta_sim>", s$nsim, "assignments,", pool, "type =", s$type, "\n")
   cat("  true parent sampled: ", format(100 * mean(x$sampled), digits = 3), "%",
       ";  top candidate correct: ", format(100 * mean(x$correct), digits = 3), "%\n", sep = "")
   cat("  Delta: median ", format(stats::median(x$delta, na.rm = TRUE), digits = 4),
