@@ -1,3 +1,48 @@
+# spawnR 0.8.0
+
+Known crosses, and documentation brought up to date.
+
+* `assign_trios()` gains `crosses`: the mating design actually used, one row
+  per cross (`mother`, `father`, and optionally `weight`, e.g. eggs
+  fertilised). The trio question becomes "which of the crosses made is this
+  offspring from", not "which of every mother-by-father combination".
+  `mothers` and `fathers` default to the parents in `crosses`.
+  - **Significance from the real design.** `sim_delta(type = "pair")` gains
+    `crosses` and `cross_weights`. The simulation uses the same mothers,
+    fathers and pattern of who was crossed with whom, and draws the true cross
+    from the list, so the runner-up is typically a half-sib cross sharing a
+    parent, as in the data. `prop_sampled_crosses` is the probability that an
+    offspring comes from a listed cross at all.
+  - **Posterior over crosses.** Pair LODs share a denominator, so their
+    differences are exact log-likelihood ratios between crosses. Each
+    offspring gets `trio_posterior` (the best cross), `trio_post_none` (from
+    no listed cross), and `trio_set`, the smallest set of crosses reaching
+    `set_level` (0.95) posterior. The set is one cross when the data decide,
+    several (usually half-sib crosses) when they do not. Weights act as a
+    prior.
+  - **Family sizes.** Attribute `families` gives each cross its expected
+    number of offspring (summed posteriors) and the number assigned
+    significantly, and `summary()` prints it.
+  - **Calibration check.** 10 dams x 10 sires, each dam crossed with 3 sires,
+    120 offspring, 6 replicates. With 4 four-allele loci, 82% of top crosses
+    were correct (58% when scoring all combinations), and the share assigned at
+    95% rose from 20% to 63% at 93.8% precision. 97.9% of 95% cross sets
+    contained the true cross, with a mean set size of 1.9. With 6 five-allele
+    loci, 98% were correct against 92%.
+* Printing a column subset of an `assign_trios()` result no longer fails.
+* New `vignette("trios")`: mothers, fathers and known crosses, computed when
+  the vignette is built.
+* The study scripts in `inst/studies/` now run against the installed package.
+  Five had sourced `../R`, a path that does not exist from that directory, and
+  two sourced a helper file under a wrong name. All six were re-run with 0.8.0.
+  Every results table in the vignettes reproduced except one cell of the
+  criteria table, which changed as a result of the 0.7.1 fix (Delta recall with
+  50 candidates, all sampled: 99.8% to 100%). Each vignette now names the
+  script behind its tables.
+* README: install from GitHub, the input format (including the 0/1 SNP coding
+  trap), known crosses, the posterior criterion, what a critical Delta of 0
+  means, the vignette list, and re-measured timings.
+
 # spawnR 0.7.2
 
 The significance simulations now follow the same rules as the analysis they

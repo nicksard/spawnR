@@ -42,6 +42,27 @@
 #'   before the best candidate and Delta are found. Removing the true parent
 #'   this way counts against the criterion, as it does in the real analysis.
 #'   `NULL` applies no screen. Pass the same values used in [parentage_lod()].
+#' @param crosses For `type = "pair"`, an optional mating design: a two-column
+#'   matrix or `data.frame` giving, for each cross that was made, the index of
+#'   the father (in `1..n_candidates`) and of the mother (in
+#'   `1..n_candidates2`). Only these pairs compete, the true pair is one of
+#'   them, and `prop_sampled` becomes the probability that an offspring comes
+#'   from a listed cross at all (otherwise both its parents are outside the
+#'   pools); `prop_sampled2` is ignored. See the section on mating designs.
+#' @param cross_weights Optional relative contribution of each cross, for
+#'   example the number of eggs fertilised, used to draw the true cross.
+#'   Defaults to equal weights.
+#'
+#' @section Mating designs:
+#' When the crosses are known, the question is not which of all possible
+#' mother-father combinations is the parent pair, but which of the crosses
+#' actually made. That is a much smaller and more structured set: in a factorial
+#' design, each wrong cross shares a parent with many others, and the
+#' runner-up to the true cross is typically a cross sharing one of its parents.
+#' Supplying `crosses` makes the simulation reproduce that structure exactly,
+#' with the real number of mothers, fathers and crosses and the real pattern of
+#' which parents were crossed with which, so the critical Delta answers the
+#' question being asked of the real data.
 #'
 #' @section Parent pairs:
 #' With `type = "pair"` each replicate draws a true father and a true mother,
@@ -86,7 +107,7 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
                       type = c("both_unknown", "one_known", "pair"),
                       assumed_error = NULL, n_candidates2 = n_candidates,
                       prop_sampled2 = prop_sampled, max_mismatch = NULL,
-                      min_loci = NULL) {
+                      min_loci = NULL, crosses = NULL, cross_weights = NULL) {
   type <- match.arg(type)
   nl <- length(freqs)
   e_true <- .expand_error(error, nl)
@@ -97,8 +118,10 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
   if (type == "pair") {
     return(.sim_delta_pair(freqs, e_true, e_used, nc, as.integer(n_candidates2),
                            prop_sampled, prop_sampled2, prop_typed, nsim,
-                           max_mismatch = max_mismatch, min_loci = min_loci))
+                           max_mismatch = max_mismatch, min_loci = min_loci,
+                           crosses = crosses, cross_w = cross_weights))
   }
+  if (!is.null(crosses)) stop("`crosses` applies only to type = 'pair'.", call. = FALSE)
 
   sampled <- stats::runif(nsim) < prop_sampled
   lodsum <- matrix(0, nsim, nc)
@@ -177,23 +200,51 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
 }
 
 # Parent-pair version of sim_delta(). Candidate fathers play the role of `c`
-# and candidate mothers of `k` in lod_locus(type = "pair"). Pair scores are
-# held as an nsim-by-(nf * nm) matrix whose column i + (j - 1) * nf is father i
-# with mother j, so column 1 is the true pair whenever both were sampled.
+# and candidate mothers of `k` in lod_locus(type = "pair"). The pairs that
+# compete are the columns of the score matrix: father `cf[i]` with mother
+# `cm[i]`. Without a mating design these are all nf * nm combinations, column
+# i + (j - 1) * nf being father i with mother j, and the true parents sit at
+# father 1 and mother 1, each present with its own sampling probability. With
+# a design (`crosses`, a two-column integer matrix of father and mother
+# indices, and optional `cross_w`), only the listed crosses compete, the true
+# pair is a listed cross drawn in proportion to `cross_w`, and with
+# probability 1 - ps_f the offspring instead comes from two parents outside the
+# pools.
 .sim_delta_pair <- function(freqs, e_true, e_used, nf, nm, ps_f, ps_m,
                             prop_typed, nsim, chunk = 4e6, max_mismatch = NULL,
-                            min_loci = NULL) {
+                            min_loci = NULL, crosses = NULL, cross_w = NULL) {
   if (is.na(nm) || nm < 1L) stop("`n_candidates2` must be positive.", call. = FALSE)
   if (ps_m < 0 || ps_m > 1) stop("`prop_sampled2` must lie in [0, 1].", call. = FALSE)
   nl <- length(freqs)
-  npair <- nf * nm
-  per <- max(1L, floor(chunk / npair))
+  if (is.null(crosses)) {
+    cf <- rep(seq_len(nf), times = nm); cm <- rep(seq_len(nm), each = nf)
+  } else {
+    crosses <- as.matrix(crosses)
+    cf <- as.integer(crosses[, 1L]); cm <- as.integer(crosses[, 2L])
+    if (anyNA(cf) || anyNA(cm) || any(cf < 1L | cf > nf) || any(cm < 1L | cm > nm)) {
+      stop("`crosses` must index fathers in 1..n_candidates and mothers in ",
+           "1..n_candidates2.", call. = FALSE)
+    }
+    if (is.null(cross_w)) cross_w <- rep(1, length(cf))
+    if (length(cross_w) != length(cf) || any(cross_w < 0) || sum(cross_w) <= 0) {
+      stop("`cross_weights` must be non-negative, one per cross.", call. = FALSE)
+    }
+  }
+  npair <- length(cf)
+  per <- max(1L, floor(chunk / max(npair, nf * nm)))
   parts <- list()
 
   for (s in seq(1L, nsim, by = per)) {
     ns <- min(per, nsim - s + 1L)
-    samp_f <- stats::runif(ns) < ps_f
-    samp_m <- stats::runif(ns) < ps_m
+    if (is.null(crosses)) {
+      samp_f <- stats::runif(ns) < ps_f
+      samp_m <- stats::runif(ns) < ps_m
+      tcol <- rep(1L, ns)
+    } else {
+      samp_f <- samp_m <- stats::runif(ns) < ps_f
+      tcol <- sample.int(npair, ns, TRUE, prob = cross_w)
+    }
+    tf <- cbind(seq_len(ns), cf[tcol]); tm <- cbind(seq_len(ns), cm[tcol])
     lodsum <- matrix(0, ns, npair)
     n_comp <- matrix(0L, ns, npair)
     n_mis <- if (is.null(max_mismatch)) NULL else matrix(0L, ns, npair)
@@ -209,8 +260,8 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
 
       F1 <- matrix(dr(ns * nf), ns, nf); F2 <- matrix(dr(ns * nf), ns, nf)
       M1 <- matrix(dr(ns * nm), ns, nm); M2 <- matrix(dr(ns * nm), ns, nm)
-      F1[samp_f, 1L] <- f1[samp_f]; F2[samp_f, 1L] <- f2[samp_f]
-      M1[samp_m, 1L] <- m1[samp_m]; M2[samp_m, 1L] <- m2[samp_m]
+      F1[tf[samp_f, , drop = FALSE]] <- f1[samp_f]; F2[tf[samp_f, , drop = FALSE]] <- f2[samp_f]
+      M1[tm[samp_m, , drop = FALSE]] <- m1[samp_m]; M2[tm[samp_m, , drop = FALSE]] <- m2[samp_m]
 
       og <- .apply_missing(.apply_error(o_f, o_m, e_true[l], p), prop_typed)
       fg <- .apply_missing(.apply_error(as.vector(F1), as.vector(F2), e_true[l], p), prop_typed)
@@ -221,11 +272,11 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
       fcode <- match(pmin(fg$a1, fg$a2) + (pmax(fg$a1, fg$a2) - 1L) * k,
                      tb$gi + (tb$gj - 1L) * k)
       fcode[is.na(fcode)] <- tb$G + 1L
-      idx <- cbind(rep(seq_len(ns), nf), fcode)
+      fcode <- matrix(fcode, ns, nf)
 
       # LOD of every possible father genotype at once (replicates in rows,
       # genotypes in columns), given each mother in turn, then a lookup for
-      # the fathers actually in the pool. This is lod_locus(type = "pair")
+      # the fathers paired with her. This is lod_locus(type = "pair")
       # unrolled so that the terms not involving the mother are computed once.
       ee <- e_used[l]
       w0 <- (1 - ee)^3; w1 <- ee * (1 - ee)^2; w23 <- 3 * ee^2 * (1 - ee) + ee^3
@@ -233,7 +284,8 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
       oa1 <- rep(og$a1, tb$G); oa2 <- rep(og$a2, tb$G)
       Po <- rep(geno_freq(og$a1, og$a2, p), tb$G)
       T_c <- trans_prob(oa1, oa2, ca1, ca2, p)
-      for (j in seq_len(nm)) {
+      for (j in unique(cm)) {
+        cols <- which(cm == j)
         T_k <- rep(trans_prob(og$a1, og$a2, M1[, j], M2[, j], p), tb$G)
         T_kc <- trans_prob_pair(oa1, oa2, rep(M1[, j], tb$G), rep(M2[, j], tb$G),
                                 ca1, ca2, p)
@@ -244,14 +296,16 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
         v[typed & num == 0] <- -700
         Vl <- cbind(matrix(v, ns, tb$G), 0)
         Vn <- cbind(matrix(as.integer(typed), ns, tb$G), 0L)
-        cols <- (j - 1L) * nf + seq_len(nf)
-        lodsum[, cols] <- lodsum[, cols] + matrix(Vl[idx], ns, nf)
-        n_comp[, cols] <- n_comp[, cols] + matrix(Vn[idx], ns, nf)
+        idx <- cbind(rep(seq_len(ns), length(cols)),
+                     as.vector(fcode[, cf[cols], drop = FALSE]))
+        nc_j <- length(cols)
+        lodsum[, cols] <- lodsum[, cols] + matrix(Vl[idx], ns, nc_j)
+        n_comp[, cols] <- n_comp[, cols] + matrix(Vn[idx], ns, nc_j)
         if (!is.null(n_mis)) {
           # a trio mismatch, as counted for the real data: no way to draw the
           # offspring from this mother and this father, ignoring error
           Vm <- cbind(matrix(as.integer(typed & T_kc == 0), ns, tb$G), 0L)
-          n_mis[, cols] <- n_mis[, cols] + matrix(Vm[idx], ns, nf)
+          n_mis[, cols] <- n_mis[, cols] + matrix(Vm[idx], ns, nc_j)
         }
       }
     }
@@ -270,14 +324,15 @@ sim_delta <- function(freqs, error, n_candidates = 100L, prop_sampled = 1,
     both <- samp_f & samp_m
     parts[[length(parts) + 1L]] <- data.frame(
       delta = delta, lod = ifelse(is.finite(best), best, NA_real_),
-      correct = both & top == 1L & npos >= 1L, sampled = both)
+      correct = both & top == tcol & npos >= 1L, sampled = both)
   }
 
   out <- do.call(rbind, parts)
   attr(out, "settings") <- list(n_candidates = nf, n_candidates2 = nm,
                                 prop_sampled = ps_f, prop_sampled2 = ps_m,
                                 prop_typed = prop_typed, nsim = nsim,
-                                type = "pair", error = e_true)
+                                type = "pair", error = e_true,
+                                n_crosses = if (is.null(crosses)) NULL else npair)
   class(out) <- c("delta_sim", "data.frame")
   out
 }
@@ -380,7 +435,10 @@ delta_critical <- function(x, levels = c(0.80, 0.95), min_n = 20L, ...) {
 #' @export
 print.delta_sim <- function(x, ...) {
   s <- attr(x, "settings")
-  pool <- if (identical(s$type, "pair")) {
+  pool <- if (!is.null(s$n_crosses)) {
+    paste0(s$n_crosses, " crosses among ", s$n_candidates, " fathers and ",
+           s$n_candidates2, " mothers,")
+  } else if (identical(s$type, "pair")) {
     paste0(s$n_candidates, " x ", s$n_candidates2, " candidate pairs,")
   } else paste(s$n_candidates, "candidates,")
   cat("<delta_sim>", s$nsim, "assignments,", pool, "type =", s$type, "\n")

@@ -1,4 +1,4 @@
-suppressMessages(invisible(lapply(list.files("../R", full.names=TRUE), source)))
+library(spawnR)  # run from inst/studies; uses the installed package
 set.seed(202)
 n_off <- 500; n_pool <- 6000; nloc <- 15; n_all <- 10; err <- 0.01
 s <- simulate_population(n = 2*n_pool, n_loci = nloc, n_alleles = n_all,

@@ -26,6 +26,34 @@
 #' attained. For the trio, a simulated assignment only counts as correct when
 #' both parents are right, so the trio confidence is a statement about the pair.
 #'
+#' @section Known crosses:
+#' In a hatchery or a controlled breeding design the crosses are known: dam 3
+#' was crossed with sires 1, 2 and 5, and so on. Supplying them as `crosses`
+#' changes the trio analysis from "which of every mother-by-father combination"
+#' to "which of the crosses actually made", which is both the right question
+#' and a much easier one. Only listed crosses are scored as pairs. The
+#' significance simulation reproduces the real design (the same mothers,
+#' fathers, and pattern of who was crossed with whom, so the runner-up is
+#' typically a cross sharing one parent with the true one, as it is in the
+#' data), and `prop_sampled_crosses` is the probability that an offspring comes
+#' from a listed cross at all.
+#'
+#' Because the candidate crosses are an exhaustive, known list, each offspring
+#' also gets a posterior probability for each cross,
+#' \deqn{\Pr(c \mid o) \propto \pi\, w_c\, e^{\mathrm{LOD}_c}, \qquad
+#'   \Pr(\text{none} \mid o) \propto 1 - \pi,}
+#' with \eqn{\pi} = `prop_sampled_crosses` and \eqn{w_c} the cross weights
+#' (normalised; equal unless given). This uses the fact that every pair LOD is
+#' a ratio against the same denominator, so differences between LODs are exact
+#' log-likelihood ratios between crosses. `trio_posterior` is the posterior of
+#' the best cross, and `trio_set` the smallest set of crosses whose posteriors
+#' sum to at least `set_level`: one cross when the data decide, several when
+#' they do not - typically half-sib crosses sharing a parent. The posteriors
+#' summed over offspring estimate how many offspring each cross produced, in
+#' attribute `families`. All of this assumes that unrelated non-parents are the
+#' alternative; relatives of the true parents among the crossed fish are not
+#' modelled.
+#'
 #' @section Mismatches:
 #' The `*_mismatches` columns count loci at which the named parent is
 #' incompatible with the offspring under Mendelian inheritance, ignoring
@@ -39,8 +67,10 @@
 #'
 #' @param g A `"genotypes"` object holding the offspring and all candidates.
 #' @param offspring Identifiers of the offspring.
-#' @param mothers Identifiers of the candidate mothers.
-#' @param fathers Identifiers of the candidate fathers.
+#' @param mothers Identifiers of the candidate mothers. With `crosses`, defaults
+#'   to the mothers in `crosses`.
+#' @param fathers Identifiers of the candidate fathers. With `crosses`,
+#'   defaults to the fathers in `crosses`.
 #' @param freqs An `"allele_freqs"` object.
 #' @param error Genotyping error rate, one value or one per locus.
 #' @param confidence Confidence levels at which to test Delta. The defaults are
@@ -64,8 +94,18 @@
 #'   at too few loci is left unassigned. Also applied inside the significance
 #'   simulations. CERVUS applies a rule of this kind; a common choice is half
 #'   the loci.
+#' @param crosses Optional known mating design: a `data.frame` with columns
+#'   `mother` and `father` (identifiers), one row per cross made, and
+#'   optionally `weight`, the relative contribution of each cross (for example
+#'   eggs fertilised). When given, only these crosses are scored as pairs; see
+#'   the section on known crosses. The single-parent analyses still consider
+#'   every candidate mother and father.
+#' @param prop_sampled_crosses With `crosses`, the probability that an
+#'   offspring comes from one of the listed crosses. 1 means the cross list is
+#'   complete and every offspring belongs to it.
+#' @param set_level With `crosses`, the posterior coverage of `trio_set`.
 #' @param output `"best"` for one row per offspring, or `"all"` for every
-#'   mother-by-father combination of every offspring, ranked.
+#'   mother-by-father combination (or listed cross) of every offspring, ranked.
 #'
 #' @return With `output = "best"`, an object of class `"trio_assignment"`: a
 #'   `data.frame` with one row per offspring and, for each of the prefixes
@@ -73,6 +113,11 @@
 #'   `n_compared`, mismatch counts and `confidence`, plus a logical
 #'   `*_significant` at the lowest level tested. The critical values are
 #'   attached as attribute `criteria` and the simulations as `delta_sims`.
+#'   With `crosses`, also `trio_posterior`, `trio_post_none` (the posterior that
+#'   the offspring is from no listed cross), `trio_set` and `trio_set_size`,
+#'   and attribute `families`: one row per cross with its weight, the
+#'   `expected` number of offspring (summed posteriors) and the number
+#'   `assigned` with a significant trio at the lowest confidence level.
 #'
 #'   With `output = "all"`, a `data.frame` with one row per offspring, mother
 #'   and father: `trio_lod` and its `rank` within the offspring, the
@@ -80,6 +125,7 @@
 #'   `n_compared`. The top-ranked row of each offspring also carries `delta`,
 #'   `confidence` and `significant`. Rows are sorted by offspring and rank, and
 #'   with many candidates this table is large; `max_mismatch` keeps it small.
+#'   With `crosses`, rows are the listed crosses and carry a `posterior`.
 #'
 #' @references
 #' Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998)
@@ -106,19 +152,48 @@
 #'                     p, error = 0.01, nsim = 500, nsim_trio = 200,
 #'                     output = "all")
 #' head(all)
+#'
+#' # a known mating design: each dam crossed with two sires
+#' cr <- data.frame(mother = rep(sim$dams[1:5], each = 2),
+#'                  father = sim$sires[c(1, 2, 2, 3, 3, 4, 4, 5, 5, 1)])
+#' kids <- sim$pedigree$offspring[1:6]
+#' ac <- assign_trios(sim$genotypes, kids, freqs = p, error = 0.01,
+#'                    crosses = cr, nsim = 500, nsim_trio = 300)
+#' ac[, c("offspring", "trio_mother", "trio_father", "trio_delta",
+#'        "trio_confidence", "trio_posterior", "trio_set")]
+#' attr(ac, "families")
 #' @export
-assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
+assign_trios <- function(g, offspring, mothers = NULL, fathers = NULL, freqs, error,
                          confidence = c(0.80, 0.95),
                          prop_sampled_mothers = 1, prop_sampled_fathers = 1,
                          prop_typed = NULL, nsim = 10000L, nsim_trio = 2000L,
                          max_mismatch = NULL, min_loci = NULL,
-                         output = c("best", "all")) {
+                         crosses = NULL, prop_sampled_crosses = 1,
+                         set_level = 0.95, output = c("best", "all")) {
   stopifnot(inherits(g, "genotypes"))
   output <- match.arg(output)
   confidence <- sort(confidence)
   off <- .as_ids(g, offspring, "offspring")
+  if (!is.null(crosses)) {
+    crosses <- .check_crosses(g, crosses)
+    if (is.null(mothers)) mothers <- unique(crosses$mother)
+    if (is.null(fathers)) fathers <- unique(crosses$father)
+    if (prop_sampled_crosses < 0 || prop_sampled_crosses > 1) {
+      stop("`prop_sampled_crosses` must lie in [0, 1].", call. = FALSE)
+    }
+  }
+  if (is.null(mothers) || is.null(fathers)) {
+    stop("Give `mothers` and `fathers`, or `crosses`.", call. = FALSE)
+  }
   mom <- unique(.as_ids(g, mothers, "mothers"))
   dad <- unique(.as_ids(g, fathers, "fathers"))
+  if (!is.null(crosses)) {
+    out_m <- setdiff(crosses$mother, mom); out_f <- setdiff(crosses$father, dad)
+    if (length(out_m) || length(out_f)) {
+      stop("Every parent in `crosses` must be among `mothers` / `fathers`; missing: ",
+           paste(utils::head(c(out_m, out_f), 5L), collapse = ", "), call. = FALSE)
+    }
+  }
   if (!length(off) || !length(mom) || !length(dad)) {
     stop("`offspring`, `mothers` and `fathers` must each be non-empty.", call. = FALSE)
   }
@@ -128,9 +203,15 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
   # run over fathers fastest: column i + (j - 1) * nf is father i, mother j.
   mo <- parentage_lod(g, off, mom, freqs, error, type = "both_unknown", output = "matrix")
   fa <- parentage_lod(g, off, dad, freqs, error, type = "both_unknown", output = "matrix")
-  pr <- parentage_lod(g, off, dad, freqs, error, type = "pair", mothers = mom,
-                     output = "matrix")
-  pm <- rep(mom, each = nf); pf <- rep(dad, times = nm)
+  if (is.null(crosses)) {
+    pr <- parentage_lod(g, off, dad, freqs, error, type = "pair", mothers = mom,
+                        output = "matrix")
+    pm <- rep(mom, each = nf); pf <- rep(dad, times = nm)
+  } else {
+    pr <- parentage_lod(g, off, crosses[c("father", "mother")], freqs, error,
+                        type = "pair", output = "matrix")
+    pm <- crosses$mother; pf <- crosses$father
+  }
 
   mask <- function(L, mis, ncmp, self) {
     L[self] <- NA_real_
@@ -142,7 +223,7 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
   Lf <- mask(fa$lod, fa$mismatches, fa$n_compared, outer(off, dad, `==`))
   Lp <- mask(pr$lod, pr$mismatches, pr$n_compared,
              outer(off, pm, `==`) | outer(off, pf, `==`) |
-               matrix(pm == pf, length(off), nf * nm, byrow = TRUE))
+               matrix(pm == pf, length(off), length(pm), byrow = TRUE))
 
   # Significance: one population-level simulation per analysis.
   if (is.null(prop_typed)) prop_typed <- .prop_typed(g, c(off, mom, dad))
@@ -153,11 +234,20 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
     father = sim_delta(freqs, error, n_candidates = nf, prop_sampled = prop_sampled_fathers,
                        prop_typed = prop_typed, nsim = nsim,
                        max_mismatch = max_mismatch, min_loci = min_loci),
-    trio = sim_delta(freqs, error, n_candidates = nf, n_candidates2 = nm,
-                     prop_sampled = prop_sampled_fathers,
-                     prop_sampled2 = prop_sampled_mothers,
-                     prop_typed = prop_typed, nsim = nsim_trio, type = "pair",
-                     max_mismatch = max_mismatch, min_loci = min_loci))
+    trio = if (is.null(crosses)) {
+      sim_delta(freqs, error, n_candidates = nf, n_candidates2 = nm,
+                prop_sampled = prop_sampled_fathers,
+                prop_sampled2 = prop_sampled_mothers,
+                prop_typed = prop_typed, nsim = nsim_trio, type = "pair",
+                max_mismatch = max_mismatch, min_loci = min_loci)
+    } else {
+      sim_delta(freqs, error, n_candidates = nf, n_candidates2 = nm,
+                prop_sampled = prop_sampled_crosses, prop_typed = prop_typed,
+                nsim = nsim_trio, type = "pair", max_mismatch = max_mismatch,
+                min_loci = min_loci,
+                crosses = cbind(match(pf, dad), match(pm, mom)),
+                cross_weights = crosses$weight)
+    })
   crit <- lapply(sims, delta_critical, levels = confidence)
   criteria <- do.call(rbind, lapply(names(crit), function(nm_)
     cbind(analysis = nm_, crit[[nm_]], stringsAsFactors = FALSE)))
@@ -167,10 +257,12 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
   cm <- .conf_level(bm$delta, crit$mother)
   cf <- .conf_level(bf$delta, crit$father)
   cp <- .conf_level(bp$delta, crit$trio)
+  post <- if (is.null(crosses)) NULL else
+    .cross_posterior(Lp, crosses$weight, prop_sampled_crosses)
 
   if (output == "all") {
-    return(.all_trios(off, pm, pf, Lp, pr, mo, fa, mom, dad, nf, bp, cp, confidence,
-                      criteria, sims))
+    return(.all_trios(off, pm, pf, Lp, pr, mo, fa, mom, dad, bp, cp, confidence,
+                      criteria, sims, post))
   }
 
   r <- seq_along(off)
@@ -194,6 +286,21 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
     trio_mismatches = as.integer(at(pr$mismatches, bp$top)),
     trio_confidence = cp, trio_significant = .sig(cp),
     stringsAsFactors = FALSE)
+  if (!is.null(post)) {
+    out$trio_posterior <- post$P[cbind(r, ifelse(is.na(bp$top), 1L, bp$top))] *
+      ifelse(is.na(bp$top), NA, 1)
+    out$trio_post_none <- post$none
+    st <- .cross_sets(post$P, paste(pm, pf, sep = " x "), set_level)
+    out$trio_set <- st$set
+    out$trio_set_size <- st$size
+    sig1 <- .sig(cp) & !is.na(bp$top)
+    attr(out, "families") <- data.frame(
+      mother = pm, father = pf, weight = crosses$weight / sum(crosses$weight),
+      expected = colSums(post$P, na.rm = TRUE),
+      assigned = tabulate(bp$top[sig1], nbins = length(pm)),
+      stringsAsFactors = FALSE)
+    attr(out, "set_level") <- set_level
+  }
   attr(out, "criteria") <- criteria
   attr(out, "delta_sims") <- sims
   attr(out, "confidence") <- confidence
@@ -221,6 +328,63 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
        lod2 = ifelse(npos >= 2L, second, NA_real_), delta = delta, npos = npos)
 }
 
+# Validate a mating design: columns mother and father (by name, else the first
+# two in that order), optional non-negative weight, duplicates dropped.
+.check_crosses <- function(g, crosses) {
+  crosses <- as.data.frame(crosses, stringsAsFactors = FALSE)
+  if (!all(c("mother", "father") %in% names(crosses))) {
+    if (ncol(crosses) < 2L) stop("`crosses` needs columns `mother` and `father`.", call. = FALSE)
+    names(crosses)[1:2] <- c("mother", "father")
+  }
+  w <- if (is.null(crosses$weight)) rep(1, nrow(crosses)) else as.numeric(crosses$weight)
+  out <- data.frame(mother = as.character(crosses$mother),
+                    father = as.character(crosses$father), weight = w,
+                    stringsAsFactors = FALSE)
+  if (anyNA(out$mother) || anyNA(out$father)) stop("`crosses` has missing identifiers.", call. = FALSE)
+  if (anyNA(w) || any(w < 0) || sum(w) <= 0) {
+    stop("`crosses$weight` must be non-negative and not all zero.", call. = FALSE)
+  }
+  .as_ids(g, out$mother, "crosses$mother"); .as_ids(g, out$father, "crosses$father")
+  out <- out[!duplicated(out[c("mother", "father")]), , drop = FALSE]
+  rownames(out) <- NULL
+  out
+}
+
+# Posterior over listed crosses for each offspring: P(c | o) is proportional to
+# pi * w_c * exp(LOD_c), and P(none | o) to 1 - pi, since every pair LOD is a
+# ratio against the same P(o). Crosses screened out (NA) get posterior 0.
+.cross_posterior <- function(L, w, pi_) {
+  w <- w / sum(w)
+  lp <- sweep(L, 2L, log(pi_) + log(w), `+`)
+  lp[is.na(lp)] <- -Inf
+  l0 <- if (pi_ < 1) log1p(-pi_) else -Inf
+  mx <- pmax(apply(lp, 1L, max), l0)
+  mx[!is.finite(mx)] <- 0
+  e <- exp(lp - mx)
+  e0 <- exp(l0 - mx)
+  z <- rowSums(e) + e0
+  P <- e / z
+  none <- e0 / z
+  P[z == 0, ] <- NA_real_
+  none[z == 0] <- NA_real_
+  list(P = P, none = none)
+}
+
+# Smallest set of crosses whose posteriors reach `level`, per offspring.
+.cross_sets <- function(P, labels, level) {
+  set <- character(nrow(P)); size <- integer(nrow(P))
+  for (i in seq_len(nrow(P))) {
+    v <- P[i, ]
+    if (all(is.na(v))) { set[i] <- NA_character_; size[i] <- NA_integer_; next }
+    o <- order(v, decreasing = TRUE)
+    k <- which(cumsum(v[o]) >= level - 1e-12)
+    k <- if (length(k)) k[1L] else length(o)
+    set[i] <- paste(labels[o[seq_len(k)]], collapse = "; ")
+    size[i] <- k
+  }
+  list(set = set, size = size)
+}
+
 # Highest confidence level whose critical Delta is reached; NA if none.
 .conf_level <- function(delta, crit) {
   lvl <- rep(NA_real_, length(delta))
@@ -233,8 +397,8 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
 
 .sig <- function(conf) !is.na(conf)
 
-.all_trios <- function(off, pm, pf, Lp, pr, mo, fa, mom, dad, nf, bp, cp,
-                       confidence, criteria, sims) {
+.all_trios <- function(off, pm, pf, Lp, pr, mo, fa, mom, dad, bp, cp,
+                       confidence, criteria, sims, post = NULL) {
   no <- length(off); np <- length(pm)
   im <- match(pm, mom); ifa <- match(pf, dad)
   d <- data.frame(offspring = rep(off, each = np),
@@ -247,6 +411,7 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
   d$mother_mismatches <- as.integer(t(mo$mismatches[, im, drop = FALSE]))
   d$father_mismatches <- as.integer(t(fa$mismatches[, ifa, drop = FALSE]))
   d$trio_mismatches <- as.integer(t(pr$mismatches))
+  if (!is.null(post)) d$posterior <- as.vector(t(post$P))
   d <- d[!is.na(d$trio_lod), , drop = FALSE]
   d <- d[order(match(d$offspring, off), -d$trio_lod), , drop = FALSE]
   d$rank <- stats::ave(d$trio_lod, d$offspring, FUN = seq_along)
@@ -255,9 +420,10 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
   d$delta <- ifelse(first, bp$delta[k], NA_real_)
   d$confidence <- ifelse(first, cp[k], NA_real_)
   d$significant <- ifelse(first, .sig(cp[k]), NA)
-  d <- d[c("offspring", "rank", "mother", "father", "trio_lod", "delta",
-           "confidence", "significant", "mother_lod", "father_lod", "n_compared",
-           "mother_mismatches", "father_mismatches", "trio_mismatches")]
+  d <- d[intersect(c("offspring", "rank", "mother", "father", "trio_lod", "delta",
+                     "confidence", "significant", "posterior", "mother_lod",
+                     "father_lod", "n_compared", "mother_mismatches",
+                     "father_mismatches", "trio_mismatches"), names(d))]
   d$rank <- as.integer(d$rank)
   rownames(d) <- NULL
   attr(d, "criteria") <- criteria
@@ -270,6 +436,13 @@ assign_trios <- function(g, offspring, mothers, fathers, freqs, error,
 #' @rdname assign_trios
 #' @export
 print.trio_assignment <- function(x, ...) {
+  need <- c("offspring", "mother", "father", "trio_mother", "trio_father",
+            "mother_significant", "father_significant", "trio_significant")
+  if (!all(need %in% names(x))) {
+    # a column subset of the result: print it as the plain table it now is
+    print.data.frame(x, ...)
+    return(invisible(x))
+  }
   conf <- attr(x, "confidence")
   cat("<trio_assignment>", nrow(x), "offspring\n")
   for (w in c("mother", "father", "trio")) {
@@ -314,6 +487,14 @@ summary.trio_assignment <- function(object, ...) {
   agree <- object$mother == object$trio_mother & object$father == object$trio_father
   cat("  trio agrees with the two best single parents: ",
       sum(agree, na.rm = TRUE), " of ", nrow(object), "\n", sep = "")
+  fam <- attr(object, "families")
+  if (!is.null(fam)) {
+    cat("  crosses: ", nrow(fam), "; offspring whose ", 100 * attr(object, "set_level"),
+        "% set is a single cross: ", sum(object$trio_set_size == 1L, na.rm = TRUE),
+        " of ", nrow(object), "\n", sep = "")
+    cat("\nFamilies (expected = summed posteriors):\n")
+    print(fam, row.names = FALSE, digits = 3)
+  }
   cat("\nCritical Delta:\n")
   print(attr(object, "criteria"), row.names = FALSE)
   invisible(attr(object, "criteria"))

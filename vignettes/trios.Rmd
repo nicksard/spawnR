@@ -1,0 +1,177 @@
+---
+title: "Mothers, fathers and known crosses"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Mothers, fathers and known crosses}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(spawnR)
+```
+
+When candidate mothers and candidate fathers are sampled separately, the usual
+questions are which mother, which father, and which pair. In a hatchery or a
+controlled breeding programme there is a better question still: the crosses are
+written down, so *which of the crosses that were actually made* did this
+offspring come from? `assign_trios()` answers all of them. Everything below is
+computed when the vignette is built.
+
+## A small hatchery
+
+Ten dams and ten sires, six microsatellites with four alleles each (a
+deliberately weak panel, so that the choices matter), 1% genotyping error, and
+80 offspring from random pairings. The crosses that produced them are the
+mating design.
+
+```{r}
+sim <- simulate_population(n = 20, n_loci = 6, n_alleles = 4,
+                           n_offspring = 80, error = 0.01, seed = 2024)
+g <- sim$genotypes
+p <- allele_freqs(g, reference = c(sim$dams, sim$sires), min_freq = 0.01)
+crosses <- unique(data.frame(mother = sim$pedigree$dam,
+                             father = sim$pedigree$sire))
+nrow(crosses)
+```
+
+## Without the crosses
+
+Every mother, every father and every one of the 100 mother-by-father pairs is
+scored. Significance comes from the Delta criterion of Marshall et al. (1998),
+simulated with the same pool sizes.
+
+```{r}
+set.seed(1)
+a <- assign_trios(g, sim$offspring, mothers = sim$dams, fathers = sim$sires,
+                  freqs = p, error = 0.01, nsim = 3000, nsim_trio = 1000)
+summary(a)
+```
+
+The printed table carries, for each of mother, father and trio, the LOD,
+Delta, the confidence level reached and the number of loci at which each parent
+is excluded by Mendelian inheritance alone:
+
+```{r}
+head(a[, c("offspring", "mother", "mother_mismatches", "father",
+           "father_mismatches", "trio_mother", "trio_father", "trio_delta",
+           "trio_mismatches", "trio_confidence")])
+```
+
+## With the crosses
+
+Supplying `crosses` restricts the trio analysis to the pairs that were made.
+The significance simulation reproduces the actual design, the same parents and
+the same pattern of who was crossed with whom, so a simulated runner-up is
+usually a half-sib cross sharing one parent with the true one, just as in the
+data.
+
+```{r}
+set.seed(1)
+ac <- assign_trios(g, sim$offspring, freqs = p, error = 0.01,
+                   crosses = crosses, nsim = 3000, nsim_trio = 1000)
+```
+
+Against the true pedigree:
+
+```{r}
+truth <- sim$pedigree[match(sim$offspring, sim$pedigree$offspring), ]
+right <- function(x) x$trio_mother == truth$dam & x$trio_father == truth$sire
+data.frame(
+  analysis = c("all pairs", "known crosses"),
+  top_pair_correct = c(mean(right(a)), mean(right(ac))),
+  significant_80 = c(mean(a$trio_significant), mean(ac$trio_significant)),
+  correct_among_significant = c(mean(right(a)[a$trio_significant]),
+                                mean(right(ac)[ac$trio_significant])))
+```
+
+Here random pairing produced about 60 of the 100 possible crosses, so the list
+is not much shorter than all pairs and the gain is modest. It grows as the
+design gets sparser: with each of ten dams crossed to three sires (30 of 100),
+four four-allele loci, and six replicate populations, the top cross was right
+for 82% of offspring against 58% when every pair was scored, and the share
+assigned at 95% confidence rose from 20% to 63%.
+
+## How to read the confidence
+
+The Delta confidence is a population-level statement: it is calibrated on
+average over the broodstock that *could* have been drawn from these allele
+frequencies, not conditionally on the particular fish in this hatchery. Over 16
+simulated hatcheries with five four-allele loci, precision among assignments at
+80% and 95% was 85% and 95% (all pairs) and 83% and 96% (known crosses), as
+stated. But the proportion of offspring whose top pair was right ranged from 64%
+to 86% between hatcheries, because a particular set of parents can happen to be
+genetically similar. With few parents and weak markers, check the realised
+precision on known crosses where you can; the posteriors below were calibrated
+in the same simulations (stated 0.969, observed 0.965 at a cutoff of 0.80).
+
+## Posteriors and plausible sets
+
+Because the crosses are a known, exhaustive list, each offspring also gets a
+posterior probability over crosses. Every pair LOD is a ratio against the same
+denominator, so differences between LODs are exact log-likelihood ratios
+between crosses, and
+$$\Pr(c \mid o) \propto \pi\, w_c\, e^{\mathrm{LOD}_c}, \qquad
+  \Pr(\text{none} \mid o) \propto 1 - \pi,$$
+with $\pi$ = `prop_sampled_crosses` and $w_c$ optional cross weights, for
+example eggs fertilised. `trio_set` is the smallest set of crosses holding 95%
+of the posterior: one cross when the data decide, several when they do not.
+
+```{r}
+head(ac[, c("offspring", "trio_mother", "trio_father", "trio_posterior",
+            "trio_set_size", "trio_set")], 8)
+table(set_size = ac$trio_set_size)
+mean(mapply(function(s, m, f) paste(m, f, sep = " x ") %in% strsplit(s, "; ")[[1]],
+            ac$trio_set, truth$dam, truth$sire))
+```
+
+When a set holds several crosses they are almost always half-sib crosses that
+share one parent, and that is useful in itself: the shared parent is known even
+when the cross is not.
+
+## Family sizes
+
+Summing posteriors over offspring estimates how many offspring each cross
+produced, which feeds directly into estimates of family-size variance and the
+effective number of breeders.
+
+```{r}
+fam <- attr(ac, "families")
+fam$true <- as.vector(table(factor(paste(truth$dam, truth$sire),
+                                   levels = paste(fam$mother, fam$father))))
+head(fam[order(-fam$expected), ], 8)
+cor(fam$expected, fam$true)
+```
+
+## Screens
+
+Two screens drop weak or impossible comparisons before the best is chosen,
+and both are applied inside the significance simulation too, so the critical
+Delta describes assignments made under the same rule. `max_mismatch` removes
+candidates excluded at more than that many loci; `min_loci` removes comparisons
+resting on too few typed loci, so that a poorly typed offspring is left
+unassigned rather than judged against a threshold simulated at average typing.
+
+```{r}
+set.seed(1)
+as <- assign_trios(g, sim$offspring, freqs = p, error = 0.01,
+                   crosses = crosses, nsim = 3000, nsim_trio = 1000,
+                   max_mismatch = 2, min_loci = 4)
+attr(as, "criteria")
+```
+
+## What is not modelled
+
+The alternative to "this is the parent" is an unrelated individual. Close
+relatives of the true parents among the crossed fish (common when broodstock are
+themselves related) are not modelled in `assign_trios()`, and with weak markers
+they can be mistaken for the parent; see `vignette("relatedness")`. The
+posterior over crosses assumes that an offspring from no listed cross has two
+parents outside the design, not one listed and one unlisted.
+
+## References
+
+Marshall, T.C., Slate, J., Kruuk, L.E.B. & Pemberton, J.M. (1998) Statistical
+confidence for likelihood-based paternity inference in natural populations.
+*Molecular Ecology* **7**, 639-655.

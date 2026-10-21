@@ -54,6 +54,9 @@ knitr::kable(k, col.names = c("loci", "critical Delta (99%)", "assigned %",
              caption = "40,000 simulations per row. Kalinowski et al. report 73% for six loci.")
 ```
 
+*Results tables in this vignette are the printed output of `06-kalinowski-replication.R` in `system.file("studies", package = "spawnR")`, last re-run with spawnR 0.8.0. They are typed in rather than computed when the vignette is built, because the simulations take minutes; re-run the script to check them.*
+
+
 **72.1% against a reported 73%.** The row is not fitted to anything; the allele
 spectrum, locus count, candidate count and error rate all come from the paper,
 and the equations come from the re-derivation. Precision sits at exactly 99.0%

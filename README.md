@@ -25,7 +25,7 @@ LOD scores in the three configurations of Kalinowski et al. (2007):
 | both unknown      | `"both_unknown"` | candidate is a parent, vs. unrelated |
 | both jointly      | `"pair"`         | candidate pair are the parents, vs. both unrelated |
 
-Two ways to attach confidence:
+Three ways to attach confidence:
 
 * **Trio-specific** (Amiri Roudbar et al. 2025) — `lod_null()` builds a
   reference distribution by forward or backward simulation conditioned on the
@@ -34,7 +34,15 @@ Two ways to attach confidence:
 * **Population-level** (Marshall et al. 1998) — `sim_delta()` and
   `delta_critical()` reproduce the Delta criterion that CERVUS reports, at the
   conventional relaxed (80%) and strict (95%) levels, for single parents and
-  (`type = "pair"`) for mother-father pairs.
+  (`type = "pair"`) for mother-father pairs, optionally under a known mating
+  design.
+* **Posterior** — `parentage_posterior()` gives the probability that the named
+  candidate is the parent, given the pool size and the proportion of parents
+  sampled; `parentage_fdr()` picks a cutoff for a target false discovery rate.
+
+`assign_parentage()` runs a complete single-parent analysis under any of the
+three. `assign_trios()` does mothers, fathers and mother-father pairs together,
+and with known crosses scores only the crosses actually made.
 
 Per-locus genotyping error rates can be estimated from known parent–offspring
 pairs with `estimate_error_rates()`.
@@ -42,8 +50,31 @@ pairs with `estimate_error_rates()`.
 ## Install
 
 ```r
-install.packages("spawnR_0.1.0.tar.gz", repos = NULL, type = "source")
+# install.packages("remotes")
+remotes::install_github("nicksard/spawnR", build_vignettes = TRUE)
 ```
+
+`build_vignettes = TRUE` is needed for `vignette()` to find the vignettes below
+(it needs the knitr and rmarkdown packages).
+
+Base R only (R >= 4.0); nothing else is installed.
+
+## Input
+
+`genotypes()` takes one row per individual: an identifier column, then two
+adjacent columns per locus holding the two alleles. Allele labels can be any
+text or numbers.
+
+```
+id    L1_a L1_b L2_a L2_b
+F01   152  156  203  203
+M07   152  160  NA   NA
+```
+
+By default the codes `""`, `"0"`, `"000"`, `"NA"`, `"*"` and `"-9"` mean
+missing, and a locus with either allele missing is treated as untyped. **SNP
+data coded 0/1, as in a VCF, must be recoded first** (for example 0 to `"A"`,
+1 to `"B"`), or every reference allele will be read as missing.
 
 ## Usage
 
@@ -86,6 +117,30 @@ assign_trios(g, offs, females, males, p, er$error, output = "all",
              max_mismatch = 3)
 ```
 
+`max_mismatch` and `min_loci` screen out candidates excluded at too many loci
+or compared at too few, in the data and in the significance simulation alike.
+
+### Known crosses
+
+In a hatchery or breeding programme the crosses are written down. Give them to
+`assign_trios()` and the trio question becomes *which of the crosses actually
+made* produced each offspring:
+
+```r
+crosses <- data.frame(mother = c("D1", "D1", "D2", "D2"),
+                      father = c("S1", "S2", "S2", "S3"))
+ac <- assign_trios(g, offs, freqs = p, error = er$error, crosses = crosses)
+ac[, c("offspring", "trio_mother", "trio_father", "trio_confidence",
+       "trio_posterior", "trio_set")]
+attr(ac, "families")   # expected offspring per cross
+```
+
+The significance simulation reproduces the real design, each offspring gets a
+posterior probability for each cross, and `trio_set` lists the smallest set of
+crosses holding 95% of it (one cross when the data decide, usually a few
+half-sib crosses when they do not). Summed over offspring, the posteriors
+estimate family sizes. See `vignette("trios")`.
+
 `simulate_population()` generates a population with a known pedigree for
 calibration and testing.
 
@@ -97,16 +152,21 @@ of them - and reduces the offspring-by-candidate score to a table lookup,
 accumulated either with dense matrix products (SNP panels) or per-locus gathers
 (microsatellites).
 
-Measured on a single core:
+Measured on a single core of a cloud container, spawnR 0.8.0, default
+simulation sizes:
 
-| task                                                    | time   |
-|---------------------------------------------------------|--------|
-| `parentage_lod`, 300 offspring x 300 cand x 300 SNPs     | 0.5 s  |
-| `parentage_lod`, 1000 x 2000 x 300 SNPs (matrix output)  | 3.3 s  |
-| `parentage_lod`, 500 x 500 x 15 microsatellites          | 0.7 s  |
-| `lod_null`, 10000 replicates, 300 SNPs                   | 0.19 s |
-| `assign_parentage` pairwise, 500 x 500 x 15 msats        | 4.3 s  |
-| `assign_parentage` pairwise, 500 x 500 x 300 SNPs        | 48 s   |
+| task                                                         | time   |
+|--------------------------------------------------------------|--------|
+| `parentage_lod`, 300 offspring x 300 cand x 300 SNPs          | 0.5 s  |
+| `parentage_lod`, 1000 x 2000 x 300 SNPs (matrix output)       | 4.9 s  |
+| `parentage_lod`, 500 x 500 x 15 microsatellites               | 0.5 s  |
+| `lod_null`, 10000 replicates, 300 SNPs                        | 0.14 s |
+| `assign_parentage` pairwise, 500 x 500 x 15 msats             | 7.8 s  |
+| `assign_trios`, 500 offspring, 50 dams x 50 sires, 15 msats   | 40 s   |
+| `assign_trios`, 500 offspring, 150 known crosses, 15 msats    | 35 s   |
+
+Most of the `assign_trios` time is the significance simulation; `nsim` and
+`nsim_trio` trade precision of the critical values for speed.
 
 For anything larger, `output = "matrix"` avoids building a long-format table of
 millions of rows, which by then costs more than the arithmetic.
@@ -118,7 +178,7 @@ package stays dependency-free unless profiling on real data says otherwise.
 
 ## Choosing a confidence criterion
 
-The two criteria control different things. The trio-specific `"pairwise"` rule
+The criteria control different things. The trio-specific `"pairwise"` rule
 bounds the chance of *rejecting a true parent*; it does not bound the chance
 that an unrelated candidate clears the same threshold, and that grows with the
 pool. At a nominal 99% level with 15 microsatellites and the true sire always
@@ -126,7 +186,26 @@ present, the share of assignments that were wrong was 0% with 100 or 500
 candidates, 3.1% with 2000, and 5.6% with 5000. The Marshall `"delta"` rule
 defines confidence as the proportion of assignments that are correct and
 simulates the whole pool, so it is the one to report when screening broadly.
-See `?assign_parentage`.
+The posterior answers the question most readers actually ask, the probability
+that this assignment is right, and stayed calibrated across pool sizes from 50
+to 5000. See `?assign_parentage` and `vignette("criteria")`.
+
+When the Delta simulation contains no wrong assignments at all, as it often
+does with a strong panel, the critical Delta is 0 and `delta_critical()` marks
+it `resolved = FALSE`: any assignment with a positive-LOD candidate passes,
+because the simulation found no threshold below which assignments fail.
+
+## Vignettes
+
+* `vignette("trios")` — mothers, fathers and known crosses
+* `vignette("criteria")` — what the confidence criteria actually control
+* `vignette("posterior")` — posterior probabilities and false discovery rates
+* `vignette("relatedness")` — relatives in the candidate pool
+* `vignette("validation")` — replicating Kalinowski et al. (2007), and comparing
+  with CERVUS
+
+The results tables in the last four come from the scripts in `inst/studies/`,
+last re-run with spawnR 0.8.0.
 
 
 ## Provenance
