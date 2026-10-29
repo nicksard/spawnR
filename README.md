@@ -47,6 +47,11 @@ and with known crosses scores only the crosses actually made.
 Per-locus genotyping error rates can be estimated from known parent–offspring
 pairs with `estimate_error_rates()`.
 
+`marker_summary()` reports what a panel can do before any parentage is
+attempted. It gives the CERVUS-style per-locus table (alleles, heterozygosity,
+PIC, F_IS) and the non-exclusion probabilities NE-1P, NE-2P, NE-PP, NE-I and
+NE-SI, per locus and combined.
+
 ## Install
 
 ```r
@@ -83,6 +88,9 @@ library(spawnR)
 
 g <- genotypes(my_wide_table, id_col = "id")   # id, then 2 columns per locus
 p <- allele_freqs(g)
+
+# what the panel can do: heterozygosity, PIC, non-exclusion probabilities
+marker_summary(g, reference = c(females, males))
 
 # per-locus error rates from a known pedigree, if you have one
 er <- estimate_error_rates(g, known_pairs, p)

@@ -1,3 +1,27 @@
+# spawnR 0.9.0
+
+Marker informativeness and non-exclusion probabilities, as CERVUS reports them.
+
+* New `marker_summary()`. For each locus it gives the number of alleles,
+  number typed, observed and unbiased expected heterozygosity, PIC and F_IS,
+  plus five non-exclusion probabilities. The `combined` attribute holds the
+  product over loci. The five probabilities are:
+  - NE-1P: first parent, other parent unknown
+  - NE-2P: second parent, first parent known
+  - NE-PP: an unrelated parent pair
+  - NE-I: identity of two unrelated individuals
+  - NE-SI: identity of two full sibs
+* The exclusion formulas are those of Jamieson & Taylor (1997). Their eq. 2a is
+  NE-1P, eq. 1a is NE-2P and eq. 3a is NE-PP; the paper numbers the first two
+  the other way round from CERVUS. The test suite checks every probability
+  against direct enumeration over all genotypes. It also checks the paper's
+  worked values: the equal-frequency maxima (eqs 1b, 2b and 3b, and Table 1)
+  and the HTG4 row of Table 2 (exclusion 0.54, 0.36 and 0.73).
+* Frequencies are counted with no floor by default, as CERVUS does. Pass
+  `reference` to count them in the candidate parents only.
+* F_IS is reported so that loci with excess heterozygosity stand out. In
+  salmonids these are often paralogous and cause spurious mismatches.
+
 # spawnR 0.8.0
 
 Known crosses, and documentation brought up to date.
