@@ -36,6 +36,25 @@ crosses <- unique(data.frame(mother = sim$pedigree$dam,
 nrow(crosses)
 ```
 
+## What the markers can do
+
+Before any assignment, `marker_summary()` gives the per-locus table CERVUS
+reports. The non-exclusion probabilities are the chance that a non-parent
+escapes exclusion at every locus: as a single parent with the other unknown
+(NE-1P), with the other parent known (NE-2P), or as a parent pair (NE-PP).
+
+```{r}
+ms <- marker_summary(g, reference = c(sim$dams, sim$sires))
+ms
+```
+
+Here the combined NE-PP is
+`r signif(100 * attr(ms, "combined")[["ne_pp"]], 2)`%: with no genotyping
+error, a random unrelated pair would survive exclusion at every locus that
+often. With 100 candidate pairs per offspring, and genotyping error that makes
+exclusion itself unreliable, that is far from negligible, which is why the
+likelihood and the confidence criteria below matter for a panel this weak.
+
 ## Without the crosses
 
 Every mother, every father and every one of the 100 mother-by-father pairs is
