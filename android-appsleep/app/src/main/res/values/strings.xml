@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AppSleep</string>
+    <string name="accessibility_description">AppSleep watches which app is on screen. When you open an app that is asleep on one of your schedules, it sends you back to the home screen. It does not read what is on the screen or collect any data.</string>
+</resources>
